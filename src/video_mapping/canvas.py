@@ -161,6 +161,36 @@ class Canvas:
         self.color_panes(row.all_panes(), color, alpha)
 
     # ------------------------------------------------------------------
+    # Bounding box drawing (useful for overlays that cross pane boundaries)
+    # ------------------------------------------------------------------
+
+    def fill_bbox(
+        self,
+        bbox: tuple[int, int, int, int],
+        color: RGBColor,
+    ) -> None:
+        """Fill a bounding box (x1, y1, x2, y2) with a solid color.
+
+        Useful for drawing solid regions even when individual panes don't perfectly
+        cover the area (e.g. a half-block, block, or row overlay).
+        """
+        x1, y1, x2, y2 = bbox
+        self.fill_rect(x1, y1, x2, y2, color)
+
+    def blend_bbox(
+        self,
+        bbox: tuple[int, int, int, int],
+        color: RGBColor,
+        alpha: float,
+    ) -> None:
+        """Alpha-blend a color onto a bounding box (x1, y1, x2, y2).
+
+        Useful for translucent overlays across structural regions.
+        """
+        x1, y1, x2, y2 = bbox
+        self.blend_rect(x1, y1, x2, y2, color, alpha)
+
+    # ------------------------------------------------------------------
     # Pillar drawing
     # ------------------------------------------------------------------
 

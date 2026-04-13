@@ -54,6 +54,10 @@ class Pane:
         """Pane height in pixels."""
         return self.y2 - self.y1 + 1
 
+    def bbox(self) -> tuple[int, int, int, int]:
+        """Return (x1, y1, x2, y2) — the bounding box of this pane."""
+        return (self.x1, self.y1, self.x2, self.y2)
+
 
 @dataclass(frozen=True)
 class Pillar:
@@ -93,6 +97,21 @@ class Half:
         for pane_row in self.pane_rows:
             yield from pane_row
 
+    def bbox(self) -> tuple[int, int, int, int]:
+        """Return (x1, y1, x2, y2) — the bounding box spanning all panes in this half.
+
+        All coordinates are inclusive and cover the entire half-block region,
+        even gaps between individual panes.
+        """
+        all_panes_list = list(self.all_panes())
+        if not all_panes_list:
+            return (0, 0, 0, 0)
+        x1 = min(p.x1 for p in all_panes_list)
+        y1 = min(p.y1 for p in all_panes_list)
+        x2 = max(p.x2 for p in all_panes_list)
+        y2 = max(p.y2 for p in all_panes_list)
+        return (x1, y1, x2, y2)
+
     @property
     def num_pane_rows(self) -> int:
         """Number of pane-rows in this half (typically 6)."""
@@ -125,6 +144,21 @@ class Block:
         for half in self.halves:
             yield from half.all_panes()
 
+    def bbox(self) -> tuple[int, int, int, int]:
+        """Return (x1, y1, x2, y2) — the bounding box spanning all panes in this block.
+
+        All coordinates are inclusive and cover the entire block region,
+        even gaps between individual panes.
+        """
+        all_panes_list = list(self.all_panes())
+        if not all_panes_list:
+            return (0, 0, 0, 0)
+        x1 = min(p.x1 for p in all_panes_list)
+        y1 = min(p.y1 for p in all_panes_list)
+        x2 = max(p.x2 for p in all_panes_list)
+        y2 = max(p.y2 for p in all_panes_list)
+        return (x1, y1, x2, y2)
+
 
 @dataclass(frozen=True)
 class Row:
@@ -148,6 +182,17 @@ class Row:
             for block in self.blocks:
                 for half in block.halves:
                     yield from half.pane_rows[pane_row_idx]
+
+    def bbox(self) -> tuple[int, int, int, int]:
+        """Return (x1, y1, x2, y2) — the bounding box spanning all panes in this row."""
+        all_panes_list = list(self.all_panes())
+        if not all_panes_list:
+            return (0, 0, 0, 0)
+        x1 = min(p.x1 for p in all_panes_list)
+        y1 = min(p.y1 for p in all_panes_list)
+        x2 = max(p.x2 for p in all_panes_list)
+        y2 = max(p.y2 for p in all_panes_list)
+        return (x1, y1, x2, y2)
 
 
 @dataclass(frozen=True)
@@ -180,6 +225,35 @@ class Layout:
         """Yield all panes in visual scan order (top row first, then bottom row)."""
         for row in self.rows:
             yield from row.iter_scan_order()
+
+    def pane_at(self, row: int, col: int) -> Pane:
+        """Get a pane by global scan-order coordinates.
+
+        Args:
+            row: Pane row within a half-block (0-5).
+            col: Global column index across all blocks in scan order (0-65).
+                 Divmod by 6 to get (block_idx, half_idx, col_idx).
+
+        Example::
+
+            # Get pane at pane-row 2, column 35 (block 5, right half, col 2)
+            pane = layout.pane_at(row=2, col=35)
+        """
+        block_idx = col // 6
+        half_idx = (col % 6) // 3
+        col_idx = col % 3
+        return self.rows[0].blocks[block_idx].halves[half_idx].pane_at(row, col_idx)
+
+    def bbox(self) -> tuple[int, int, int, int]:
+        """Return (x1, y1, x2, y2) — the bounding box spanning the entire building layout."""
+        all_panes_list = list(self.all_panes())
+        if not all_panes_list:
+            return (0, 0, 0, 0)
+        x1 = min(p.x1 for p in all_panes_list)
+        y1 = min(p.y1 for p in all_panes_list)
+        x2 = max(p.x2 for p in all_panes_list)
+        y2 = max(p.y2 for p in all_panes_list)
+        return (x1, y1, x2, y2)
 
     @classmethod
     def from_json(
