@@ -38,6 +38,7 @@ class VideoWriter:
         output_codec: str = "libx264",
         output_pix_fmt: str = "yuv420p",
         audio_codec: str = "aac",
+        audio_start_seconds: float = 0.0,
     ) -> None:
         """Create a VideoWriter.
 
@@ -55,6 +56,7 @@ class VideoWriter:
             output_codec: ffmpeg video codec.
             output_pix_fmt: ffmpeg output pixel format.
             audio_codec: ffmpeg audio codec (when ``audio_path`` is provided).
+            audio_start_seconds: Seek offset (seconds) applied to ``audio_path``.
         """
         self._output_path = output_path
         self._width = width
@@ -67,6 +69,7 @@ class VideoWriter:
         self._output_codec = output_codec
         self._output_pix_fmt = output_pix_fmt
         self._audio_codec = audio_codec
+        self._audio_start_seconds = audio_start_seconds
         self._proc: subprocess.Popen[bytes] | None = None
 
     def __enter__(self) -> Self:
@@ -88,6 +91,8 @@ class VideoWriter:
         ]
 
         if self._audio_path is not None:
+            if self._audio_start_seconds > 0.0:
+                cmd += ["-ss", f"{self._audio_start_seconds:.6f}"]
             cmd += ["-i", str(self._audio_path)]
 
         if self._vf_filter is not None:

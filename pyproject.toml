@@ -26,6 +26,7 @@ pane-scan = "video_mapping.cli.pane_scan:main"
 draw-halves = "video_mapping.cli.draw_halves:main"
 extract-panes = "video_mapping.cli.extract_panes:main"
 blink-animation = "video_mapping.cli.blink_animation:main"
+pillar-choreography = "video_mapping.cli.pillar_choreography:main"
 
 [build-system]
 requires = ["hatchling"]
