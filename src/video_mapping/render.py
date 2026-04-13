@@ -83,7 +83,7 @@ class VideoWriter:
         with tempfile.NamedTemporaryFile(
             mode="wb",
             prefix=f".{self._output_path.stem}_",
-            suffix=f"{self._output_path.suffix}.tmp",
+            suffix=f".tmp{self._output_path.suffix}",
             dir=self._output_path.parent,
             delete=False,
         ) as tmp:

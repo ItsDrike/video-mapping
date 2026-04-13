@@ -168,6 +168,12 @@ def _parse_args() -> argparse.Namespace:
     )
     _ = parser.add_argument("--hop-size", type=int, default=1024)
     _ = parser.add_argument(
+        "--start-end-animation",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable mirrored reveal/hide animation (use --no-start-end-animation to show all gradients immediately).",
+    )
+    _ = parser.add_argument(
         "--vf",
         default="pad=width=4096:height=606:x=0:y=0",
         help="ffmpeg -vf filter string (used only when a background image is provided).",
@@ -217,21 +223,25 @@ def main() -> None:
 
     pairs = _build_mirrored_pairs(num_pillars)
     n_pairs = len(pairs)
-    reveal_frames = _select_event_frames(
-        beat_strengths,
-        n_events=n_pairs,
-        fps=args.fps,
-        window_start_ratio=0.0,
-        window_end_ratio=0.7,
-    )
-    hide_frames = _select_event_frames(
-        beat_strengths,
-        n_events=n_pairs,
-        fps=args.fps,
-        window_start_ratio=0.72,
-        window_end_ratio=1.0,
-        min_start_frame=(reveal_frames[-1] + max(1, int(args.fps * 0.5))) if reveal_frames else 1,
-    )
+    if args.start_end_animation:
+        reveal_frames = _select_event_frames(
+            beat_strengths,
+            n_events=n_pairs,
+            fps=args.fps,
+            window_start_ratio=0.0,
+            window_end_ratio=0.7,
+        )
+        hide_frames = _select_event_frames(
+            beat_strengths,
+            n_events=n_pairs,
+            fps=args.fps,
+            window_start_ratio=0.72,
+            window_end_ratio=1.0,
+            min_start_frame=(reveal_frames[-1] + max(1, int(args.fps * 0.5))) if reveal_frames else 1,
+        )
+    else:
+        reveal_frames = []
+        hide_frames = []
     hide_order = list(reversed(range(n_pairs)))
     pair_hues = np.linspace(_START_HUE, _END_HUE, num=n_pairs, dtype=np.float32)
 
@@ -251,6 +261,7 @@ def main() -> None:
         output_pix_fmt="yuva420p" if transparent_output else "yuv420p",
         audio_codec="libopus",
         audio_start_seconds=args.audio_offset,
+        audio_duration_seconds=n_video_frames / args.fps,
     ) as writer:
         for frame_idx in range(n_video_frames):
             if stop_event.is_set():
@@ -259,8 +270,12 @@ def main() -> None:
 
             canvas = base.copy()
             beat = float(beat_strengths[frame_idx])
-            revealed_pairs = sum(1 for reveal in reveal_frames if frame_idx >= reveal)
-            hidden_pairs_count = sum(1 for hide in hide_frames if frame_idx >= hide)
+            if args.start_end_animation:
+                revealed_pairs = sum(1 for reveal in reveal_frames if frame_idx >= reveal)
+                hidden_pairs_count = sum(1 for hide in hide_frames if frame_idx >= hide)
+            else:
+                revealed_pairs = n_pairs
+                hidden_pairs_count = 0
             hidden_pair_indices = set(hide_order[:hidden_pairs_count])
             all_revealed = revealed_pairs >= n_pairs
 
