@@ -2,7 +2,8 @@
 
 Pillars start transparent. They appear in mirrored pairs (outside-in) on
 significant beat events, with pair colors moving from light green to orange.
-After all pairs are visible, colors continue shifting in sync with the music.
+After all pairs are visible, colors continue shifting in sync with the music,
+then disappear in mirrored center-out pairs near the end.
 
 Example::
 
@@ -83,22 +84,28 @@ def _build_mirrored_pairs(num_pillars: int) -> list[tuple[int, int]]:
     return pairs
 
 
-def _select_reveal_frames(
+def _select_event_frames(
     beat_strengths: np.ndarray,
     *,
-    n_pairs: int,
+    n_events: int,
     fps: int,
+    window_start_ratio: float,
+    window_end_ratio: float,
+    min_start_frame: int = 1,
 ) -> list[int]:
     n_frames = len(beat_strengths)
-    if n_frames <= 0 or n_pairs <= 0:
+    if n_frames <= 0 or n_events <= 0:
         return []
 
-    reveal_window_end = max(1, int(n_frames * 0.7))
+    window_start = max(1, int(n_frames * window_start_ratio), min_start_frame)
+    window_end = max(window_start + 1, int(n_frames * window_end_ratio), min_start_frame + 1)
+    window_end = min(window_end, n_frames)
+
     threshold = max(0.10, float(np.percentile(beat_strengths, 75)) * 0.75)
     min_gap = max(1, int(fps * 0.33))
 
     peaks: list[int] = []
-    for idx in range(1, reveal_window_end - 1):
+    for idx in range(window_start, window_end - 1):
         strength = float(beat_strengths[idx])
         if strength < threshold:
             continue
@@ -111,9 +118,9 @@ def _select_reveal_frames(
         peaks.append(idx)
 
     fallback = np.linspace(
-        max(1, int(0.2 * fps)),
-        max(1, reveal_window_end - 1),
-        n_pairs,
+        window_start,
+        max(window_start, window_end - 1),
+        n_events,
         dtype=np.int32,
     ).tolist()
     candidates = sorted(set(peaks + fallback))
@@ -123,12 +130,12 @@ def _select_reveal_frames(
         if reveal_frames and idx - reveal_frames[-1] < min_gap:
             continue
         reveal_frames.append(int(idx))
-        if len(reveal_frames) == n_pairs:
+        if len(reveal_frames) == n_events:
             return reveal_frames
 
-    while len(reveal_frames) < n_pairs:
+    while len(reveal_frames) < n_events:
         if not reveal_frames:
-            next_idx = max(1, int(0.2 * fps))
+            next_idx = window_start
         else:
             next_idx = min(n_frames - 1, reveal_frames[-1] + min_gap)
         reveal_frames.append(next_idx)
@@ -210,7 +217,22 @@ def main() -> None:
 
     pairs = _build_mirrored_pairs(num_pillars)
     n_pairs = len(pairs)
-    reveal_frames = _select_reveal_frames(beat_strengths, n_pairs=n_pairs, fps=args.fps)
+    reveal_frames = _select_event_frames(
+        beat_strengths,
+        n_events=n_pairs,
+        fps=args.fps,
+        window_start_ratio=0.0,
+        window_end_ratio=0.7,
+    )
+    hide_frames = _select_event_frames(
+        beat_strengths,
+        n_events=n_pairs,
+        fps=args.fps,
+        window_start_ratio=0.72,
+        window_end_ratio=1.0,
+        min_start_frame=(reveal_frames[-1] + max(1, int(args.fps * 0.5))) if reveal_frames else 1,
+    )
+    hide_order = list(reversed(range(n_pairs)))
     pair_hues = np.linspace(_START_HUE, _END_HUE, num=n_pairs, dtype=np.float32)
 
     print(f"Rendering {n_video_frames} frames (Ctrl+C to stop)...")
@@ -238,10 +260,12 @@ def main() -> None:
             canvas = base.copy()
             beat = float(beat_strengths[frame_idx])
             revealed_pairs = sum(1 for reveal in reveal_frames if frame_idx >= reveal)
+            hidden_pairs_count = sum(1 for hide in hide_frames if frame_idx >= hide)
+            hidden_pair_indices = set(hide_order[:hidden_pairs_count])
             all_revealed = revealed_pairs >= n_pairs
 
             for pair_idx, (left_idx, right_idx) in enumerate(pairs):
-                if pair_idx >= revealed_pairs:
+                if pair_idx >= revealed_pairs or pair_idx in hidden_pair_indices:
                     continue
 
                 base_hue = float(pair_hues[pair_idx])
