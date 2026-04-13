@@ -64,6 +64,12 @@ def _parse_args() -> argparse.Namespace:
     _ = parser.add_argument("--fps", type=int, default=DEFAULT_FPS)
     _ = parser.add_argument("--width", type=int, default=4096)
     _ = parser.add_argument("--height", type=int, default=606)
+    _ = parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Optional max output duration in seconds (default: full audio length).",
+    )
     _ = parser.add_argument("--hop-size", type=int, default=1024)
     _ = parser.add_argument(
         "--vf",
@@ -92,6 +98,8 @@ def main() -> None:
     fft_fps = sample_rate / args.hop_size
     n_fft_frames = len(band_heights)
     n_video_frames = int(n_fft_frames / fft_fps * args.fps)
+    if args.duration is not None:
+        n_video_frames = min(n_video_frames, int(args.duration * args.fps))
 
     if args.image is not None:
         base = Canvas.from_image(args.image)
