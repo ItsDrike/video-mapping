@@ -13,7 +13,7 @@ from video_mapping.types import RGBColor, U8Array
 
 
 class Canvas:
-    """A mutable RGB drawing surface backed by a numpy uint8 array.
+    """A mutable RGB/RGBA drawing surface backed by a numpy uint8 array.
 
     Coordinates follow image convention: (0, 0) is the top-left corner.
     All rectangle coordinates (including Pane and Pillar bounds) are *inclusive*
@@ -21,8 +21,8 @@ class Canvas:
 
     Usage::
 
-        # Production: pure black background (what gets projected onto the building)
-        canvas = Canvas.black(4096, 606)
+        # Production: transparent background for alpha-enabled exports
+        canvas = Canvas.transparent(4096, 606)
 
         # Debug: draw on top of the building mask for spatial reference
         canvas = Canvas.from_image(Path("static/color-mask.png"))
@@ -42,6 +42,11 @@ class Canvas:
     def black(cls, width: int, height: int) -> Canvas:
         """Create a fully-black canvas (the projection surface)."""
         return cls(np.zeros((height, width, 3), dtype=np.uint8))
+
+    @classmethod
+    def transparent(cls, width: int, height: int) -> Canvas:
+        """Create a fully-transparent RGBA canvas."""
+        return cls(np.zeros((height, width, 4), dtype=np.uint8))
 
     @classmethod
     def from_image(cls, path: Path) -> Canvas:
@@ -76,12 +81,13 @@ class Canvas:
     # ------------------------------------------------------------------
 
     def to_array(self) -> U8Array:
-        """Expose the underlying array (shape: height x width x 3, dtype uint8)."""
+        """Expose the underlying array (shape: height x width x 3|4, dtype uint8)."""
         return self._arr
 
     def to_image(self) -> Image.Image:
         """Convert to a PIL Image."""
-        return Image.fromarray(self._arr, mode="RGB")
+        mode = "RGBA" if self._arr.shape[2] == 4 else "RGB"
+        return Image.fromarray(self._arr, mode=mode)
 
     def save(self, path: Path) -> None:
         """Write the canvas to a PNG file."""
@@ -93,7 +99,10 @@ class Canvas:
 
     def fill_rect(self, x1: int, y1: int, x2: int, y2: int, color: RGBColor) -> None:
         """Solid-fill a rectangle. All coords are inclusive."""
-        self._arr[y1 : y2 + 1, x1 : x2 + 1] = color
+        region = self._arr[y1 : y2 + 1, x1 : x2 + 1]
+        region[..., :3] = color
+        if self._arr.shape[2] == 4:
+            region[..., 3] = 255
 
     def blend_rect(
         self,
@@ -105,10 +114,28 @@ class Canvas:
         alpha: float,
     ) -> None:
         """Alpha-blend *color* onto a rectangle (alpha=1.0 → fully opaque). Coords are inclusive."""
-        region = self._arr[y1 : y2 + 1, x1 : x2 + 1].astype(np.float32)
+        region = self._arr[y1 : y2 + 1, x1 : x2 + 1]
         color_arr = np.array(color, dtype=np.float32)
-        blended = region * (1.0 - alpha) + color_arr * alpha
-        self._arr[y1 : y2 + 1, x1 : x2 + 1] = blended.clip(0, 255).astype(np.uint8)
+        if self._arr.shape[2] == 3:
+            region_rgb = region.astype(np.float32)
+            blended = region_rgb * (1.0 - alpha) + color_arr * alpha
+            region[:] = blended.clip(0, 255).astype(np.uint8)
+            return
+
+        region_f = region.astype(np.float32)
+        dst_rgb = region_f[..., :3] / 255.0
+        dst_alpha = region_f[..., 3:4] / 255.0
+
+        src_alpha = np.float32(alpha)
+        out_alpha = src_alpha + dst_alpha * (1.0 - src_alpha)
+
+        src_rgb = color_arr / 255.0
+        numer_rgb = src_rgb * src_alpha + dst_rgb * dst_alpha * (1.0 - src_alpha)
+        out_rgb = np.zeros_like(dst_rgb)
+        _ = np.divide(numer_rgb, out_alpha, out=out_rgb, where=out_alpha > 0.0)
+
+        region[..., :3] = (out_rgb * 255.0).clip(0, 255).astype(np.uint8)
+        region[..., 3] = (out_alpha[..., 0] * 255.0).clip(0, 255).astype(np.uint8)
 
     def _draw_rect(
         self,
@@ -196,7 +223,7 @@ class Canvas:
 
     def fill_pillar(self, pillar: Pillar, color: RGBColor) -> None:
         """Solid-fill a pillar from top to bottom of the canvas."""
-        self._arr[:, pillar.x_start : pillar.x_end + 1] = color
+        self.fill_rect(pillar.x_start, 0, pillar.x_end, self.height - 1, color)
 
     def fill_pillar_bar(
         self,

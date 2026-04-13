@@ -26,7 +26,7 @@ DEFAULT_FPS = 30
 DEFAULT_BAR_COLOR: tuple[int, int, int] = (0, 255, 0)
 DEFAULT_GLOW_COLOR: tuple[int, int, int] = (255, 200, 50)  # warm yellow-orange
 DEFAULT_PANES_JSON = Path("static/panes.json")
-DEFAULT_OUTPUT = Path("output/audio_visualizer.mp4")
+DEFAULT_OUTPUT = Path("output/audio_visualizer.webm")
 
 stop_event = Event()
 
@@ -57,7 +57,7 @@ def _parse_args() -> argparse.Namespace:
         "--image",
         type=Path,
         default=None,
-        help="Background image (default: black canvas). Pass the color mask for debug rendering.",
+        help="Background image (default: transparent canvas). Pass the color mask for debug rendering.",
     )
     _ = parser.add_argument("--panes", type=Path, default=DEFAULT_PANES_JSON)
     _ = parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
@@ -95,8 +95,10 @@ def main() -> None:
 
     if args.image is not None:
         base = Canvas.from_image(args.image)
+        transparent_output = False
     else:
-        base = Canvas.black(args.width, args.height)
+        base = Canvas.transparent(args.width, args.height)
+        transparent_output = True
 
     print(f"Rendering {n_video_frames} frames (Ctrl+C to stop)...")
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -107,7 +109,12 @@ def main() -> None:
         height=base.height,
         fps=args.fps,
         audio_path=args.audio,
-        vf_filter=args.vf,
+        vf_filter=None if transparent_output else args.vf,
+        preset=None,
+        input_pix_fmt="rgba" if transparent_output else "rgb24",
+        output_codec="libvpx-vp9",
+        output_pix_fmt="yuva420p" if transparent_output else "yuv420p",
+        audio_codec="libopus",
     ) as writer:
         for frame_idx in range(n_video_frames):
             if stop_event.is_set():

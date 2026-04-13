@@ -30,7 +30,7 @@ from video_mapping.types import RGBColor
 DURATION = 30.0
 DEFAULT_FPS = 30
 DEFAULT_PANES_JSON = Path("static/panes.json")
-DEFAULT_OUTPUT = Path("output/blink_animation.mp4")
+DEFAULT_OUTPUT = Path("output/blink_animation.webm")
 SEED = 42
 
 _NUM_BUILDING_ROWS = 2
@@ -185,7 +185,7 @@ def _parse_args() -> argparse.Namespace:
         "--image",
         type=Path,
         default=None,
-        help="Background image (default: black canvas). Pass the color mask for debug rendering.",
+        help="Background image (default: transparent canvas). Pass the color mask for debug rendering.",
     )
     _ = parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     _ = parser.add_argument("--fps", type=int, default=DEFAULT_FPS)
@@ -212,13 +212,25 @@ def main() -> None:
     n_frames = int(args.duration * args.fps)
     if args.image is not None:
         base = Canvas.from_image(args.image)
+        transparent_output = False
     else:
-        base = Canvas.black(args.width, args.height)
+        base = Canvas.transparent(args.width, args.height)
+        transparent_output = True
 
     print(f"Rendering {n_frames} frames ({args.duration:.0f}s @ {args.fps} fps)...")
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
-    with VideoWriter(args.output, width=base.width, height=base.height, fps=args.fps) as writer:
+    with VideoWriter(
+        args.output,
+        width=base.width,
+        height=base.height,
+        fps=args.fps,
+        vf_filter=None if transparent_output else "pad=width=ceil(iw/2)*2:height=ceil(ih/2)*2",
+        preset=None,
+        input_pix_fmt="rgba" if transparent_output else "rgb24",
+        output_codec="libvpx-vp9",
+        output_pix_fmt="yuva420p" if transparent_output else "yuv420p",
+    ) as writer:
         for frame_idx in range(n_frames):
             if stop_event.is_set():
                 print(f"Interrupted at frame {frame_idx}")

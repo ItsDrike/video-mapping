@@ -19,6 +19,7 @@ output/*
 # Large input / generated media files (not committed)
 *.mp4
 *.wav
+*.webm
 
 # OS
 .DS_Store

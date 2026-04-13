@@ -1,4 +1,4 @@
-"""Video rendering: stream raw RGB frames to ffmpeg."""
+"""Video rendering: stream raw RGB/RGBA frames to ffmpeg."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class VideoWriter:
-    """Context manager that pipes raw RGB frames to ffmpeg.
+    """Context manager that pipes raw RGB/RGBA frames to ffmpeg.
 
     Usage::
 
@@ -33,7 +33,11 @@ class VideoWriter:
         fps: int,
         audio_path: Path | None = None,
         vf_filter: str | None = "pad=width=ceil(iw/2)*2:height=ceil(ih/2)*2",
-        preset: str = "medium",
+        preset: str | None = "medium",
+        input_pix_fmt: str = "rgb24",
+        output_codec: str = "libx264",
+        output_pix_fmt: str = "yuv420p",
+        audio_codec: str = "aac",
     ) -> None:
         """Create a VideoWriter.
 
@@ -46,7 +50,11 @@ class VideoWriter:
             vf_filter: ffmpeg ``-vf`` filter string. The default pads dimensions to even
                 numbers (required by yuv420p). Pass ``None`` to disable, or supply a
                 custom string such as ``"pad=width=4096:height=606:x=0:y=0"``.
-            preset: libx264 encoding preset (speed/quality trade-off).
+            preset: Optional encoder preset (commonly used by libx264).
+            input_pix_fmt: ffmpeg pixel format of incoming raw frames.
+            output_codec: ffmpeg video codec.
+            output_pix_fmt: ffmpeg output pixel format.
+            audio_codec: ffmpeg audio codec (when ``audio_path`` is provided).
         """
         self._output_path = output_path
         self._width = width
@@ -55,6 +63,10 @@ class VideoWriter:
         self._audio_path = audio_path
         self._vf_filter = vf_filter
         self._preset = preset
+        self._input_pix_fmt = input_pix_fmt
+        self._output_codec = output_codec
+        self._output_pix_fmt = output_pix_fmt
+        self._audio_codec = audio_codec
         self._proc: subprocess.Popen[bytes] | None = None
 
     def __enter__(self) -> Self:
@@ -66,7 +78,7 @@ class VideoWriter:
             "-vcodec",
             "rawvideo",
             "-pix_fmt",
-            "rgb24",
+            self._input_pix_fmt,
             "-s",
             f"{self._width}x{self._height}",
             "-r",
@@ -81,10 +93,13 @@ class VideoWriter:
         if self._vf_filter is not None:
             cmd += ["-vf", self._vf_filter]
 
-        cmd += ["-c:v", "libx264", "-preset", self._preset, "-pix_fmt", "yuv420p"]
+        cmd += ["-c:v", self._output_codec]
+        if self._preset is not None:
+            cmd += ["-preset", self._preset]
+        cmd += ["-pix_fmt", self._output_pix_fmt]
 
         if self._audio_path is not None:
-            cmd += ["-c:a", "aac", "-shortest"]
+            cmd += ["-c:a", self._audio_codec, "-shortest"]
 
         cmd.append(str(self._output_path))
 
@@ -99,7 +114,7 @@ class VideoWriter:
             self._proc = None
 
     def write_array(self, frame: U8Array) -> bool:
-        """Write a raw frame array (height x width x 3, uint8).
+        """Write a raw frame array (height x width x 3|4, uint8).
 
         Returns ``False`` if the pipe is broken (ffmpeg finished early), in which
         case the caller should stop the render loop.
