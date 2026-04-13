@@ -12,7 +12,7 @@ Quick-start::
     base.color_pane(layout.top_row.blocks[2].left.pane_at(0, 1), (255, 0, 0))
 
     # Render a video
-    with VideoWriter(Path("output/out.mp4"), width=base.width, height=base.height, fps=30) as writer:
+    with VideoWriter(Path("output/out.mp4"), width=base.width, height=base.height, fps=25) as writer:
         for _ in range(90):  # 3 seconds at 30 fps
             frame = base.copy()
             writer.write_canvas(frame)

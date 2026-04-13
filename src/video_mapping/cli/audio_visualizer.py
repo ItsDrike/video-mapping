@@ -22,7 +22,7 @@ from video_mapping.layout import Layout
 from video_mapping.render import VideoWriter
 
 # Visualisation defaults
-DEFAULT_FPS = 30
+DEFAULT_FPS = 25
 DEFAULT_BAR_COLOR: tuple[int, int, int] = (0, 255, 0)
 DEFAULT_GLOW_COLOR: tuple[int, int, int] = (255, 200, 50)  # warm yellow-orange
 DEFAULT_PANES_JSON = Path("static/panes.json")

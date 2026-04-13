@@ -39,7 +39,7 @@ def _parse_args() -> argparse.Namespace:
     _ = parser.add_argument("--image", type=Path, default=DEFAULT_IMAGE)
     _ = parser.add_argument("--panes", type=Path, default=DEFAULT_PANES_JSON)
     _ = parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    _ = parser.add_argument("--fps", type=int, default=40)
+    _ = parser.add_argument("--fps", type=int, default=25)
     _ = parser.add_argument("--blink-seconds", type=float, default=0.025, metavar="SECS")
     _ = parser.add_argument("--alpha", type=float, default=0.85)
     _ = parser.add_argument("--preset", default="ultrafast", help="libx264 preset.")

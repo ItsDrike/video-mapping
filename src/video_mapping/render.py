@@ -17,7 +17,7 @@ class VideoWriter:
 
     Usage::
 
-        with VideoWriter(Path("output/out.mp4"), width=4096, height=606, fps=30) as writer:
+        with VideoWriter(Path("output/out.mp4"), width=4096, height=606, fps=25) as writer:
             for frame in ...:
                 canvas = base.copy()
                 # ... draw on canvas ...

@@ -28,7 +28,7 @@ from video_mapping.render import VideoWriter
 from video_mapping.types import RGBColor
 
 DURATION = 30.0
-DEFAULT_FPS = 30
+DEFAULT_FPS = 25
 DEFAULT_PANES_JSON = Path("static/panes.json")
 DEFAULT_OUTPUT = Path("output/blink_animation.webm")
 SEED = 42

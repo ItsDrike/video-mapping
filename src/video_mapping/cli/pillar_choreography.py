@@ -25,7 +25,7 @@ from video_mapping.layout import Layout
 from video_mapping.render import VideoWriter
 from video_mapping.types import RGBColor
 
-DEFAULT_FPS = 30
+DEFAULT_FPS = 25
 DEFAULT_DURATION = 15.0
 DEFAULT_PANES_JSON = Path("static/panes.json")
 DEFAULT_OUTPUT = Path("output/pillar_choreography.webm")
