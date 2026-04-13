@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Self
 
@@ -39,6 +40,7 @@ class VideoWriter:
         output_pix_fmt: str = "yuv420p",
         audio_codec: str = "aac",
         audio_start_seconds: float = 0.0,
+        audio_duration_seconds: float | None = None,
     ) -> None:
         """Create a VideoWriter.
 
@@ -57,6 +59,8 @@ class VideoWriter:
             output_pix_fmt: ffmpeg output pixel format.
             audio_codec: ffmpeg audio codec (when ``audio_path`` is provided).
             audio_start_seconds: Seek offset (seconds) applied to ``audio_path``.
+            audio_duration_seconds: Optional duration cap (seconds) applied to
+                ``audio_path`` after ``audio_start_seconds``.
         """
         self._output_path = output_path
         self._width = width
@@ -70,9 +74,22 @@ class VideoWriter:
         self._output_pix_fmt = output_pix_fmt
         self._audio_codec = audio_codec
         self._audio_start_seconds = audio_start_seconds
+        self._audio_duration_seconds = audio_duration_seconds
+        self._temp_output_path: Path | None = None
         self._proc: subprocess.Popen[bytes] | None = None
 
     def __enter__(self) -> Self:
+        self._output_path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            prefix=f".{self._output_path.stem}_",
+            suffix=f"{self._output_path.suffix}.tmp",
+            dir=self._output_path.parent,
+            delete=False,
+        ) as tmp:
+            temp_output_path = Path(tmp.name)
+        self._temp_output_path = temp_output_path
+
         cmd: list[str] = [
             "ffmpeg",
             "-y",
@@ -93,6 +110,8 @@ class VideoWriter:
         if self._audio_path is not None:
             if self._audio_start_seconds > 0.0:
                 cmd += ["-ss", f"{self._audio_start_seconds:.6f}"]
+            if self._audio_duration_seconds is not None and self._audio_duration_seconds > 0.0:
+                cmd += ["-t", f"{self._audio_duration_seconds:.6f}"]
             cmd += ["-i", str(self._audio_path)]
 
         if self._vf_filter is not None:
@@ -106,17 +125,31 @@ class VideoWriter:
         if self._audio_path is not None:
             cmd += ["-c:a", self._audio_codec, "-shortest"]
 
-        cmd.append(str(self._output_path))
+        cmd.append(str(temp_output_path))
 
-        self._proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)  # noqa: S603
+        try:
+            self._proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)  # noqa: S603
+        except Exception:
+            if temp_output_path.exists():
+                temp_output_path.unlink()
+            self._temp_output_path = None
+            raise
         return self
 
     def __exit__(self, *exc_info: object) -> None:
         if self._proc is not None:
             if self._proc.stdin is not None:
                 self._proc.stdin.close()
-            _ = self._proc.wait()
+            return_code = self._proc.wait()
             self._proc = None
+
+            if self._temp_output_path is not None:
+                if return_code == 0 and exc_info[0] is None:
+                    _ = self._temp_output_path.replace(self._output_path)
+                elif self._temp_output_path.exists():
+                    self._temp_output_path.unlink()
+
+        self._temp_output_path = None
 
     def write_array(self, frame: U8Array) -> bool:
         """Write a raw frame array (height x width x 3|4, uint8).
