@@ -1,0 +1,149 @@
+[project]
+name = "video-mapping"
+version = "0.1.0"
+description = "Programmatic drawing API for building-facade video mapping."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+  "basedpyright>=1.39.0",
+  "numpy>=2.4.4",
+  "pillow>=12.2.0",
+  "pre-commit>=4.5.1",
+  "ruff>=0.15.10",
+  "scipy>=1.17.1",
+  "scipy-stubs>=1.17.1.3",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[dependency-groups]
+dev = ["pre-commit>=4.5.1", "typing-extensions>=4.15.0"]
+
+[project.scripts]
+audio-visualizer = "video_mapping.cli.audio_visualizer:main"
+pane-scan = "video_mapping.cli.pane_scan:main"
+draw-halves = "video_mapping.cli.draw_halves:main"
+extract-panes = "video_mapping.cli.extract_panes:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/video_mapping"]
+
+
+[tool.basedpyright]
+pythonPlatform = "All"
+pythonVersion = "3.14"
+typeCheckingMode = "all"
+
+# Diagnostic behavior settings
+strictListInference = false
+strictDictionaryInference = false
+strictSetInference = false
+analyzeUnannotatedFunctions = true
+strictParameterNoneValue = true
+enableTypeIgnoreComments = true
+enableExperimentalFeatures = false
+disableBytesTypePromotions = true
+
+# Diagnostic rules
+reportAny = false
+reportExplicitAny = false
+reportImplicitStringConcatenation = false
+reportUnreachable = "hint"
+reportUnusedParameter = "hint"
+reportUnannotatedClassAttribute = false
+reportUnknownArgumentType = false             # consider enabling
+reportUnknownVariableType = false             # consider enabling
+reportUnknownMemberType = false               # consider enabling
+reportUnknownParameterType = false            # consider enabling
+reportUnknownLambdaType = false               # consider enabling
+reportMissingTypeStubs = "information"        # consider bumping to warning/error
+reportUninitializedInstanceVariable = false   # until https://github.com/DetachHead/basedpyright/issues/491
+reportIncompatibleUnannotatedOverride = false # until https://github.com/DetachHead/basedpyright/issues/1349
+reportMissingParameterType = false            # ruff's flake8-annotations (ANN) already covers this + gives us more control
+
+[tool.ruff]
+target-version = "py314"
+line-length = 119
+
+[tool.ruff.lint]
+select = ["ALL"]
+
+ignore = [
+  "C90", # mccabe
+  "FBT", # flake8-boolean-trap
+  "CPY", # flake8-copyright
+  "EM",  # flake8-errmsg
+  "SLF", # flake8-self
+  "ARG", # flake8-unused-arguments
+  "TD",  # flake8-todos
+  "FIX", # flake8-fixme
+
+  "D100", # Missing docstring in public module
+  "D104", # Missing docstring in public package
+  "D105", # Missing docstring in magic method
+  "D107", # Missing docstring in __init__
+  "D203", # Blank line required before class docstring
+  "D213", # Multi-line summary should start at second line (incompatible with D212)
+  "D301", # Use r""" if any backslashes in a docstring
+  "D417", # Missing argument descrition in the docstring
+
+  "ANN002", # Missing type annotation for *args
+  "ANN003", # Missing type annotation for **kwargs
+  "ANN204", # Missing return type annotation for special method
+  "ANN401", # Dynamically typed expressions (typing.Any) disallowed
+
+  "SIM102", # use a single if statement instead of nested if statements
+  "SIM108", # Use ternary operator {contents} instead of if-else-block
+
+  "TC001", # Move application imports used only for annotations into a type-checking block
+  "TC002", # Move 3rd-party imports used only for annotations into a type-checking block
+  "TC003", # Move standard library imports used only for annotations into a type-checking block
+
+  "TD002", # Missing author in TODO
+  "TD003", # Missing issue link on the line following this TODO
+
+  "TRY003",  # No f-strings in raise statements
+  "EM101",   # No string literals in exception init
+  "EM102",   # No f-strings in exception init
+  "UP024",   # Using errors that alias OSError
+  "PLR2004", # Using unnamed numerical constants
+  "PGH003",  # Using specific rule codes in type ignores
+  "E731",    # Don't asign a lambda expression, use a def
+  "A005",    # Module name shadows a stdlib module
+  "T201",    # Print statments
+
+  # Redundant rules with ruff-format:
+  "E111",   # Indentation of a non-multiple of 4 spaces
+  "E114",   # Comment with indentation  of a non-multiple of 4 spaces
+  "E117",   # Cheks for over-indented code
+  "D206",   # Checks for docstrings indented with tabs
+  "D300",   # Checks for docstring that use ''' instead of """
+  "Q000",   # Checks of inline strings that use wrong quotes (' instead of ")
+  "Q001",   # Multiline string that use wrong quotes (''' instead of """)
+  "Q002",   # Checks for docstrings that use wrong quotes (''' instead of """)
+  "Q003",   # Checks for avoidable escaped quotes ("\"" -> '"')
+  "COM812", # Missing trailing comma (in multi-line lists/tuples/...)
+  "COM819", # Prohibited trailing comma (in single-line lists/tuples/...)
+  "ISC001", # Single line implicit string concatenation ("hi" "hey" -> "hihey")
+  "ISC002", # Multi line implicit string concatenation
+]
+
+[tool.ruff.lint.pylint]
+max-args = 20
+max-branches = 20
+max-returns = 20
+max-statements = 250
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+line-ending = "lf"
