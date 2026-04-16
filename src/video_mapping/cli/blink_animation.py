@@ -166,6 +166,11 @@ def _render_frame(
     # appearance within the 30-second window.
     # ------------------------------------------------------------------ #
     if draw_pillar_bars:
+        if end_scan_progress is None:
+            pillar_remaining = 1.0
+        else:
+            pillar_remaining = max(0.0, 1.0 - end_scan_progress)
+
         for i, pillar in enumerate(layout.pillars):
             phase = i / len(layout.pillars) * 2.0 * math.pi
             h = (
@@ -175,6 +180,9 @@ def _render_frame(
                 + 0.08 * math.sin(2.0 * math.pi * t / 0.52 + phase * 0.9)
             )
             bar_h = int(canvas.height * max(0.04, min(1.0, h)))
+            bar_h = int(bar_h * pillar_remaining)
+            if bar_h <= 0:
+                continue
             pillar_hue = (0.07 + 0.04 * math.sin(t * 0.55 + i * 0.38)) % 1.0
             canvas.fill_pillar_bar(pillar, bar_h, _hsv_to_rgb(pillar_hue, 1.0, 1.0))
 
@@ -194,7 +202,63 @@ def _render_frame(
         ]
 
     if retired < total:
-        canvas.color_pane(end_scan_panes[retired], (220, 240, 255), alpha=0.98)
+        scan_pane = end_scan_panes[retired]
+
+        def _blend_radial_glow(
+            color: RGBColor,
+            *,
+            cx: float,
+            cy: float,
+            radius: int,
+            alpha: float,
+        ) -> None:
+            x1 = max(0, int(cx - radius))
+            y1 = max(0, int(cy - radius))
+            x2 = min(canvas.width - 1, int(cx + radius))
+            y2 = min(canvas.height - 1, int(cy + radius))
+            if x2 < x1 or y2 < y1:
+                return
+
+            region = canvas_arr[y1 : y2 + 1, x1 : x2 + 1]
+
+            ys = np.arange(y1, y2 + 1, dtype=np.float32)
+            xs = np.arange(x1, x2 + 1, dtype=np.float32)
+            grid_x, grid_y = np.meshgrid(xs, ys)
+            dist = np.sqrt((grid_x - cx) ** 2 + (grid_y - cy) ** 2) / max(1.0, float(radius))
+            local_alpha = np.clip((1.0 - dist) * alpha, 0.0, 1.0).astype(np.float32)
+            if np.all(local_alpha <= 0.0):
+                return
+
+            color_arr = np.array(color, dtype=np.float32)
+            src_alpha = local_alpha[..., None]
+
+            if region.shape[2] == 3:
+                region_f = region.astype(np.float32)
+                blended = region_f * (1.0 - src_alpha) + color_arr * src_alpha
+                region[:] = blended.clip(0, 255).astype(np.uint8)
+                return
+
+            region_f = region.astype(np.float32)
+            dst_rgb = region_f[..., :3] / 255.0
+            dst_alpha = region_f[..., 3:4] / 255.0
+            src_rgb = color_arr / 255.0
+
+            out_alpha = src_alpha + dst_alpha * (1.0 - src_alpha)
+            numer_rgb = src_rgb * src_alpha + dst_rgb * dst_alpha * (1.0 - src_alpha)
+            out_rgb = np.zeros_like(dst_rgb)
+            _ = np.divide(numer_rgb, out_alpha, out=out_rgb, where=out_alpha > 0.0)
+
+            region[..., :3] = (out_rgb * 255.0).clip(0, 255).astype(np.uint8)
+            region[..., 3] = (out_alpha[..., 0] * 255.0).clip(0, 255).astype(np.uint8)
+
+        center_x = (scan_pane.x1 + scan_pane.x2) / 2.0
+        center_y = (scan_pane.y1 + scan_pane.y2) / 2.0
+
+        # Subtle circular bloom constrained close to the pane edges.
+        _blend_radial_glow((188, 218, 255), cx=center_x, cy=center_y, radius=30, alpha=0.12)
+        _blend_radial_glow((220, 238, 255), cx=center_x, cy=center_y, radius=18, alpha=0.16)
+        _blend_radial_glow((242, 248, 255), cx=center_x, cy=center_y, radius=10, alpha=0.20)
+        canvas.color_pane(scan_pane, (255, 255, 255), alpha=1.0)
 
 
 def _parse_args() -> argparse.Namespace:
