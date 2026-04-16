@@ -81,16 +81,13 @@ def main() -> None:
         width=base.width,
         height=base.height,
         fps=args.fps,
-        vf_filter=None,
-        preset=None,
-        input_pix_fmt="rgba" if transparent_output else "rgb24",
-        output_codec="libvpx-vp9",
-        output_pix_fmt="yuva420p" if transparent_output else "yuv420p",
+        total_frames=total_frames,
+        transparent=transparent_output,
     ) as writer:
         try:
             for pane_idx, pane in enumerate(panes):
                 if stop_event.is_set():
-                    print(f"Interrupted at pane {pane_idx}")
+                    writer.log(f"Interrupted at pane {pane_idx}")
                     break
 
                 canvas = base.copy()
@@ -99,13 +96,10 @@ def main() -> None:
 
                 for _ in range(frames_per_pane):
                     if not writer.write_array(frame_bytes):
-                        print("FFmpeg terminated early.")
+                        writer.log("FFmpeg terminated early.")
                         break
-
-                if pane_idx % 100 == 0:
-                    print(f"  pane {pane_idx + 1}/{len(panes)}")
         except BrokenPipeError:
-            print("FFmpeg terminated early.")
+            writer.log("FFmpeg terminated early.")
 
     print(f"Saved to {args.output}")
 

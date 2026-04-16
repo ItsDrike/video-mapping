@@ -36,7 +36,7 @@ _NUM_BUILDING_ROWS = 2
 _NUM_PANE_ROWS = 6
 _TOTAL_PANE_ROWS = _NUM_BUILDING_ROWS * _NUM_PANE_ROWS  # 12
 _NUM_COLS = 66  # 11 blocks x 2 halves x 3 columns
-_END_SCAN_FRACTION = 2.5 / DURATION
+_END_SCAN_FRACTION = 4 / DURATION
 
 stop_event = Event()
 
@@ -246,15 +246,12 @@ def main() -> None:
         width=base.width,
         height=base.height,
         fps=args.fps,
-        vf_filter=None,
-        preset=None,
-        input_pix_fmt="rgba" if transparent_output else "rgb24",
-        output_codec="libvpx-vp9",
-        output_pix_fmt="yuva420p" if transparent_output else "yuv420p",
+        total_frames=n_frames,
+        transparent=transparent_output,
     ) as writer:
         for frame_idx in range(n_frames):
             if stop_event.is_set():
-                print(f"Interrupted at frame {frame_idx}")
+                writer.log(f"Interrupted at frame {frame_idx}")
                 break
 
             t = frame_idx / args.fps
@@ -276,11 +273,8 @@ def main() -> None:
             )
 
             if not writer.write_canvas(canvas):
-                print("FFmpeg terminated early.")
+                writer.log("FFmpeg terminated early.")
                 break
-
-            if frame_idx % 90 == 0:
-                print(f"  frame {frame_idx}/{n_frames}  ({t:.1f}s)")
 
     print(f"Saved to {args.output}")
 

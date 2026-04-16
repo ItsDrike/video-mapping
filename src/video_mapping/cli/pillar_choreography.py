@@ -243,19 +243,15 @@ def main() -> None:
         width=base.width,
         height=base.height,
         fps=args.fps,
+        total_frames=n_video_frames,
+        transparent=transparent_output,
         audio_path=args.audio,
-        vf_filter=None,
-        preset=None,
-        input_pix_fmt="rgba" if transparent_output else "rgb24",
-        output_codec="libvpx-vp9",
-        output_pix_fmt="yuva420p" if transparent_output else "yuv420p",
-        audio_codec="libopus",
         audio_start_seconds=args.audio_offset,
         audio_duration_seconds=n_video_frames / args.fps,
     ) as writer:
         for frame_idx in range(n_video_frames):
             if stop_event.is_set():
-                print(f"Interrupted at frame {frame_idx}")
+                writer.log(f"Interrupted at frame {frame_idx}")
                 break
 
             canvas = base.copy()
@@ -302,11 +298,8 @@ def main() -> None:
                     canvas.fill_pillar(layout.pillars[pillar_idx], color)
 
             if not writer.write_canvas(canvas):
-                print("FFmpeg finished (audio ended).")
+                writer.log("FFmpeg finished (audio ended).")
                 break
-
-            if frame_idx % 50 == 0:
-                print(f"  frame {frame_idx}/{n_video_frames}  beat={beat:.3f}")
 
     print(f"Saved to {args.output}")
 

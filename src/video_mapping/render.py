@@ -1,13 +1,14 @@
-"""Video rendering: stream raw RGB/RGBA frames to ffmpeg."""
+"""Video rendering: stream raw RGB/RGBA frames to ffmpeg with tqdm progress."""
 
 from __future__ import annotations
 
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Any, Self
 
 import imageio_ffmpeg  # pyright: ignore[reportMissingTypeStubs]
+from tqdm import tqdm
 
 from video_mapping.types import U8Array
 
@@ -16,17 +17,7 @@ if TYPE_CHECKING:
 
 
 class VideoWriter:
-    """Context manager that pipes raw RGB/RGBA frames to ffmpeg.
-
-    Usage::
-
-        with VideoWriter(Path("output/out.mp4"), width=4096, height=606, fps=25) as writer:
-            for frame in ...:
-                canvas = base.copy()
-                # ... draw on canvas ...
-                if not writer.write_canvas(canvas):
-                    break  # ffmpeg finished early (e.g. audio ended)
-    """
+    """Context manager that pipes raw frames to ffmpeg and owns render progress."""
 
     def __init__(
         self,
@@ -34,51 +25,28 @@ class VideoWriter:
         width: int,
         height: int,
         fps: int,
+        total_frames: int | None = None,
+        transparent: bool = True,
         audio_path: Path | None = None,
-        vf_filter: str | None = "pad=width=ceil(iw/2)*2:height=ceil(ih/2)*2",
-        preset: str | None = "medium",
-        input_pix_fmt: str = "rgb24",
-        output_codec: str = "libx264",
-        output_pix_fmt: str = "yuv420p",
-        audio_codec: str = "aac",
         audio_start_seconds: float = 0.0,
         audio_duration_seconds: float | None = None,
+        progress_desc: str = "Render",
     ) -> None:
-        """Create a VideoWriter.
-
-        Args:
-            output_path: Destination file (will be overwritten if it exists).
-            width: Frame width in pixels.
-            height: Frame height in pixels.
-            fps: Output frame rate.
-            audio_path: Optional audio track to mux into the output.
-            vf_filter: ffmpeg ``-vf`` filter string. The default pads dimensions to even
-                numbers (required by yuv420p). Pass ``None`` to disable, or supply a
-                custom string such as ``"pad=width=4096:height=606:x=0:y=0"``.
-            preset: Optional encoder preset (commonly used by libx264).
-            input_pix_fmt: ffmpeg pixel format of incoming raw frames.
-            output_codec: ffmpeg video codec.
-            output_pix_fmt: ffmpeg output pixel format.
-            audio_codec: ffmpeg audio codec (when ``audio_path`` is provided).
-            audio_start_seconds: Seek offset (seconds) applied to ``audio_path``.
-            audio_duration_seconds: Optional duration cap (seconds) applied to
-                ``audio_path`` after ``audio_start_seconds``.
-        """
         self._output_path = output_path
         self._width = width
         self._height = height
         self._fps = fps
+        self._total_frames = total_frames
+        self._transparent = transparent
         self._audio_path = audio_path
-        self._vf_filter = vf_filter
-        self._preset = preset
-        self._input_pix_fmt = input_pix_fmt
-        self._output_codec = output_codec
-        self._output_pix_fmt = output_pix_fmt
-        self._audio_codec = audio_codec
         self._audio_start_seconds = audio_start_seconds
         self._audio_duration_seconds = audio_duration_seconds
+        self._progress_desc = progress_desc
+
+        self._frames_written = 0
         self._temp_output_path: Path | None = None
         self._proc: subprocess.Popen[bytes] | None = None
+        self._progress: Any | None = None
 
     def __enter__(self) -> Self:
         self._output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,9 +57,11 @@ class VideoWriter:
             dir=self._output_path.parent,
             delete=False,
         ) as tmp:
-            temp_output_path = Path(tmp.name)
-        self._temp_output_path = temp_output_path
+            self._temp_output_path = Path(tmp.name)
+
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        input_pix_fmt = "rgba" if self._transparent else "rgb24"
+        output_pix_fmt = "yuva420p" if self._transparent else "yuv420p"
 
         cmd: list[str] = [
             ffmpeg_exe,
@@ -101,7 +71,7 @@ class VideoWriter:
             "-vcodec",
             "rawvideo",
             "-pix_fmt",
-            self._input_pix_fmt,
+            input_pix_fmt,
             "-s",
             f"{self._width}x{self._height}",
             "-r",
@@ -117,26 +87,26 @@ class VideoWriter:
                 cmd += ["-t", f"{self._audio_duration_seconds:.6f}"]
             cmd += ["-i", str(self._audio_path)]
 
-        if self._vf_filter is not None:
-            cmd += ["-vf", self._vf_filter]
-
-        cmd += ["-c:v", self._output_codec]
-        if self._preset is not None:
-            cmd += ["-preset", self._preset]
-        cmd += ["-pix_fmt", self._output_pix_fmt]
-
+        cmd += ["-c:v", "libvpx-vp9", "-pix_fmt", output_pix_fmt]
         if self._audio_path is not None:
-            cmd += ["-c:a", self._audio_codec, "-shortest"]
+            cmd += ["-c:a", "libopus", "-shortest"]
 
-        cmd.append(str(temp_output_path))
+        cmd.append(str(self._temp_output_path))
+
+        self._progress = tqdm(total=self._total_frames, desc=self._progress_desc, unit="frame", dynamic_ncols=True)
 
         try:
-            self._proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)  # noqa: S603
+            self._proc = subprocess.Popen(  # noqa: S603
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         except Exception:
-            if temp_output_path.exists():
-                temp_output_path.unlink()
-            self._temp_output_path = None
+            self._cleanup_temp_file()
+            self._close_progress()
             raise
+
         return self
 
     def __exit__(self, *exc_info: object) -> None:
@@ -152,14 +122,21 @@ class VideoWriter:
                 elif self._temp_output_path.exists():
                     self._temp_output_path.unlink()
 
+        self._close_progress()
         self._temp_output_path = None
 
-    def write_array(self, frame: U8Array) -> bool:
-        """Write a raw frame array (height x width x 3|4, uint8).
+    def _cleanup_temp_file(self) -> None:
+        if self._temp_output_path is not None and self._temp_output_path.exists():
+            self._temp_output_path.unlink()
+        self._temp_output_path = None
 
-        Returns ``False`` if the pipe is broken (ffmpeg finished early), in which
-        case the caller should stop the render loop.
-        """
+    def _close_progress(self) -> None:
+        if self._progress is not None:
+            self._progress.close()
+            self._progress = None
+
+    def write_array(self, frame: U8Array) -> bool:
+        """Write a raw frame array (height x width x 3|4, uint8)."""
         if self._proc is None or self._proc.stdin is None:
             msg = "VideoWriter must be used as a context manager"
             raise RuntimeError(msg)
@@ -168,8 +145,22 @@ class VideoWriter:
         except BrokenPipeError:
             return False
         else:
+            self._frames_written += 1
+            if self._progress is not None:
+                _ = self._progress.update(1)
+                _ = self._progress.set_postfix_str(
+                    f"time={self._frames_written / self._fps:.1f}s",
+                    refresh=False,
+                )
             return True
 
     def write_canvas(self, canvas: Canvas) -> bool:
-        """Convenience wrapper around :meth:`write_array` for a :class:`~video_mapping.canvas.Canvas`."""
+        """Write the current canvas contents as a frame."""
         return self.write_array(canvas.to_array())
+
+    def log(self, message: str) -> None:
+        """Write a message without breaking the progress bar."""
+        if self._progress is not None:
+            self._progress.write(message)
+        else:
+            print(message)
