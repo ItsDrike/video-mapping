@@ -27,8 +27,6 @@ audio-visualizer = "video_mapping.cli.audio_visualizer:main"
 blink-animation = "video_mapping.cli.blink_animation:main"
 pillar-choreography = "video_mapping.cli.pillar_choreography:main"
 half-block-beats = "video_mapping.cli.half_block_beats:main"
-debug-pane-scan = "video_mapping.cli.debug.pane_scan:main"
-debug-draw-halves = "video_mapping.cli.debug.draw_halves:main"
 debug-extract-layout = "video_mapping.cli.debug.extract_layout:main"
 debug-draw-layout = "video_mapping.cli.debug.draw_layout:main"
 
