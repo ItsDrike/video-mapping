@@ -7,6 +7,8 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Self
 
+import imageio_ffmpeg  # pyright: ignore[reportMissingTypeStubs]
+
 from video_mapping.types import U8Array
 
 if TYPE_CHECKING:
@@ -89,9 +91,10 @@ class VideoWriter:
         ) as tmp:
             temp_output_path = Path(tmp.name)
         self._temp_output_path = temp_output_path
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
 
         cmd: list[str] = [
-            "ffmpeg",
+            ffmpeg_exe,
             "-y",
             "-f",
             "rawvideo",
