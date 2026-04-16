@@ -6,23 +6,9 @@ import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, ClassVar, cast
 
-# Default pillar positions — structural columns between window blocks.
-# Both x_start and x_end are *inclusive* pixel columns.
-DEFAULT_PILLARS: list[tuple[int, int]] = [
-    (4, 30),
-    (374, 398),
-    (744, 768),
-    (1114, 1138),
-    (1482, 1506),
-    (1852, 1876),
-    (2222, 2246),
-    (2590, 2614),
-    (2960, 2984),
-    (3330, 3354),
-    (3700, 3724),
-    (4068, 4092),
-]
+from video_mapping.constants import DEFAULT_LAYOUT_JSON_PATH
 
 
 @dataclass(frozen=True)
@@ -199,6 +185,8 @@ class Row:
 class Layout:
     """The complete building layout: two horizontal rows of blocks, plus the structural pillars."""
 
+    _default_layout_cache: ClassVar[Layout | None] = None
+
     rows: tuple[Row, Row]
     pillars: tuple[Pillar, ...]
 
@@ -256,26 +244,27 @@ class Layout:
         return (x1, y1, x2, y2)
 
     @classmethod
-    def from_json(
-        cls,
-        path: Path,
-        pillars: list[tuple[int, int]] | None = None,
-    ) -> Layout:
-        """Load layout from a panes.json file.
+    def from_json(cls, path: Path) -> Layout:
+        """Load layout from a layout.json file.
 
         Args:
-            path: Path to the panes.json produced by the extract pipeline.
-            pillars: Override pillar positions as (x_start, x_end) inclusive pairs.
-                     Defaults to the hardcoded building constants.
+            path: Path to the layout.json produced by the extract pipeline.
         """
         with path.open() as f:
             data = json.load(f)
 
-        pillar_src = pillars if pillars is not None else DEFAULT_PILLARS
+        return cls.from_data(data)
+
+    @classmethod
+    def from_data(cls, data: dict[str, object]) -> Layout:
+        """Load layout from already-parsed pane data."""
+        typed_data = cast("dict[str, Any]", data)
+
+        pillar_src = _extract_pillars(typed_data)
         pillar_objects = tuple(Pillar(x_start, x_end) for x_start, x_end in pillar_src)
 
         rows = []
-        for row_data in data["rows"]:
+        for row_data in typed_data["rows"]:
             blocks = []
             for block_data in row_data["blocks"]:
                 halves: list[Half] = []
@@ -289,3 +278,28 @@ class Layout:
             rows.append(Row(blocks=tuple(blocks)))
 
         return cls(rows=(rows[0], rows[1]), pillars=pillar_objects)
+
+    @classmethod
+    def default(cls) -> Layout:
+        """Return the hard-locked default building layout."""
+        if cls._default_layout_cache is None:
+            cls._default_layout_cache = cls.from_json(DEFAULT_LAYOUT_JSON_PATH)
+        return cls._default_layout_cache
+
+
+def _extract_pillars(data: dict[str, Any]) -> list[tuple[int, int]]:
+    pillars_raw = data.get("pillars")
+    if not isinstance(pillars_raw, list):
+        msg = "Layout JSON must include a top-level 'pillars' list"
+        raise TypeError(msg)
+
+    pillars: list[tuple[int, int]] = []
+    for entry in pillars_raw:
+        if isinstance(entry, dict):
+            x_start = int(entry["x_start"])
+            x_end = int(entry["x_end"])
+        else:
+            x_start = int(entry[0])
+            x_end = int(entry[1])
+        pillars.append((x_start, x_end))
+    return pillars

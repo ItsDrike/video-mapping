@@ -23,13 +23,12 @@ from threading import Event
 import numpy as np
 
 from video_mapping.canvas import Canvas
+from video_mapping.constants import DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_FPS, DEFAULT_MASK_IMAGE_PATH
 from video_mapping.layout import Layout, Pane
 from video_mapping.render import VideoWriter
 from video_mapping.types import RGBColor
 
 DURATION = 30.0
-DEFAULT_FPS = 25
-DEFAULT_PANES_JSON = Path("static/panes.json")
 DEFAULT_OUTPUT = Path("output/blink_animation.webm")
 SEED = 42
 
@@ -180,17 +179,13 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Render a 30-second generative blinking animation.",
     )
-    _ = parser.add_argument("--panes", type=Path, default=DEFAULT_PANES_JSON)
     _ = parser.add_argument(
-        "--image",
-        type=Path,
-        default=None,
-        help="Background image (default: transparent canvas). Pass the color mask for debug rendering.",
+        "--mask",
+        action="store_true",
+        help="Render over the fixed building mask (default: transparent background).",
     )
     _ = parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     _ = parser.add_argument("--fps", type=int, default=DEFAULT_FPS)
-    _ = parser.add_argument("--width", type=int, default=4096)
-    _ = parser.add_argument("--height", type=int, default=606)
     _ = parser.add_argument("--duration", type=float, default=DURATION, help="Duration in seconds.")
     _ = parser.add_argument("--seed", type=int, default=SEED, help="RNG seed for sparkles.")
     _ = parser.add_argument(
@@ -206,15 +201,15 @@ def main() -> None:
     _ = signal.signal(signal.SIGINT, _handle_sigint)
     args = _parse_args()
 
-    layout = Layout.from_json(args.panes)
+    layout = Layout.default()
     rng = np.random.default_rng(args.seed)
 
     n_frames = int(args.duration * args.fps)
-    if args.image is not None:
-        base = Canvas.from_image(args.image)
+    if args.mask:
+        base = Canvas.from_image(DEFAULT_MASK_IMAGE_PATH)
         transparent_output = False
     else:
-        base = Canvas.transparent(args.width, args.height)
+        base = Canvas.transparent(DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
         transparent_output = True
 
     print(f"Rendering {n_frames} frames ({args.duration:.0f}s @ {args.fps} fps)...")
@@ -225,7 +220,7 @@ def main() -> None:
         width=base.width,
         height=base.height,
         fps=args.fps,
-        vf_filter=None if transparent_output else "pad=width=ceil(iw/2)*2:height=ceil(ih/2)*2",
+        vf_filter=None,
         preset=None,
         input_pix_fmt="rgba" if transparent_output else "rgb24",
         output_codec="libvpx-vp9",

@@ -1,13 +1,17 @@
-"""Extract pane geometry from a building-facade mask image.
+"""CLI: extract building layout geometry from a facade mask image.
 
-This is a one-time (or infrequent) utility: given a mask PNG where each window
-pane is a bright white rectangle on a dark background, it detects the pane
-bounding boxes, organises them into the row → block → half → pane-row hierarchy,
-and writes ``panes.json``.
+Reads a mask PNG where window panes appear as bright rectangles on a dark
+background, detects their bounding boxes, organises them into the
+row → block → half → pane-row hierarchy, and writes ``layout.json``.
+
+Example::
+
+    debug-extract-layout --mask static/color-mask-bg.png --output static/layout.json
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,12 +20,30 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
+from video_mapping.constants import DEFAULT_LAYOUT_JSON_PATH
+
+DEFAULT_PILLARS: list[tuple[int, int]] = [
+    (4, 30),
+    (374, 398),
+    (744, 768),
+    (1114, 1138),
+    (1482, 1506),
+    (1852, 1876),
+    (2222, 2246),
+    (2590, 2614),
+    (2960, 2984),
+    (3330, 3354),
+    (3700, 3724),
+    (4068, 4092),
+]
+
 EXPECTED_PANES = 792
 ROWS = 2
 BLOCKS_PER_ROW = 11
-HALVES_PER_BLOCK = 2
 PANES_PER_HALF = 18
-HALVES_PER_ROW = BLOCKS_PER_ROW * HALVES_PER_BLOCK
+
+DEFAULT_MASK = DEFAULT_LAYOUT_JSON_PATH.parent / "color-mask-bg.png"
+DEFAULT_OUTPUT = DEFAULT_LAYOUT_JSON_PATH
 
 
 @dataclass(frozen=True)
@@ -41,7 +63,6 @@ class _Pane:
 
 
 def _extract_raw_panes(mask_path: Path) -> list[_Pane]:
-    """Detect bright rectangles in the mask and return their bounding boxes."""
     img = Image.open(mask_path).convert("RGB")
     arr = np.array(img)
 
@@ -53,8 +74,6 @@ def _extract_raw_panes(mask_path: Path) -> list[_Pane]:
 
     panes: list[_Pane] = []
     for sl in slices:
-        if sl is None:  # type: ignore[comparison-overlap]
-            continue
         ys, xs = sl
         x1, x2 = xs.start, xs.stop - 1
         y1, y2 = ys.start, ys.stop - 1
@@ -85,12 +104,11 @@ def _split_rows(panes: list[_Pane]) -> list[list[_Pane]]:
 
 
 def _split_row_into_halves(row_panes: list[_Pane]) -> list[list[_Pane]]:
-    """Cluster panes into columns, then group columns into half-blocks (3 cols each)."""
     panes_sorted = sorted(row_panes, key=lambda p: p.cx)
 
     columns: list[list[_Pane]] = []
     current: list[_Pane] = [panes_sorted[0]]
-    column_threshold = 25  # px — same column if centres are this close
+    column_threshold = 25
 
     for i in range(1, len(panes_sorted)):
         if abs(panes_sorted[i].cx - panes_sorted[i - 1].cx) < column_threshold:
@@ -135,7 +153,6 @@ def _validate_half(half: list[_Pane], row_idx: int, half_idx: int) -> None:
 
 
 def _half_to_grid(half: list[_Pane]) -> list[list[dict[str, int]]]:
-    """Return the half as a 6-row x 3-column grid in JSON-serialisable form."""
     ordered = sorted(half, key=lambda p: (p.cy, p.cx))
     grid = []
     for row_start in range(0, len(ordered), 3):
@@ -166,14 +183,12 @@ def _build_structure(panes: list[_Pane]) -> dict[str, object]:
             )
         rows_out.append({"blocks": blocks_out})
 
-    return {"rows": rows_out}
+    pillar_data = [{"x_start": x_start, "x_end": x_end} for x_start, x_end in DEFAULT_PILLARS]
+    return {"rows": rows_out, "pillars": pillar_data}
 
 
-def extract_panes(mask_path: Path, output_path: Path) -> int:
-    """Extract panes from *mask_path* and write structured JSON to *output_path*.
-
-    Returns the number of panes found.
-    """
+def extract_layout(mask_path: Path, output_path: Path) -> int:
+    """Extract layout from *mask_path* and write structured JSON to *output_path*."""
     panes = _extract_raw_panes(mask_path)
     data = _build_structure(panes)
 
@@ -181,3 +196,24 @@ def extract_panes(mask_path: Path, output_path: Path) -> int:
         json.dump(data, f, indent=2)
 
     return len(panes)
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Extract layout geometry from a facade mask image into layout.json.",
+    )
+    _ = parser.add_argument("--mask", type=Path, default=DEFAULT_MASK)
+    _ = parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    return parser.parse_args()
+
+
+def main() -> None:
+    """Extract building layout geometry from a facade mask image."""
+    args = _parse_args()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    count = extract_layout(args.mask, args.output)
+    print(f"Extracted {count} panes → {args.output}")
+
+
+if __name__ == "__main__":
+    main()

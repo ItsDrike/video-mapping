@@ -5,7 +5,7 @@ verify that the extracted pane geometry maps correctly onto the building facade.
 
 Example::
 
-    pane-scan --image static/color-mask.png --output output/pane_scan.mp4
+    debug-pane-scan --mask --output output/pane_scan.webm
 """
 
 from __future__ import annotations
@@ -16,12 +16,17 @@ from pathlib import Path
 from threading import Event
 
 from video_mapping.canvas import Canvas
+from video_mapping.constants import (
+    DEFAULT_CANVAS_HEIGHT,
+    DEFAULT_CANVAS_WIDTH,
+    DEFAULT_FPS,
+    DEFAULT_LAYOUT_JSON_PATH,
+    DEFAULT_MASK_IMAGE_PATH,
+)
 from video_mapping.layout import Layout
 from video_mapping.render import VideoWriter
 
-DEFAULT_PANES_JSON = Path("static/panes.json")
-DEFAULT_IMAGE = Path("static/color-mask.png")
-DEFAULT_OUTPUT = Path("output/pane_scan.mp4")
+DEFAULT_OUTPUT = Path("output/pane_scan.webm")
 DEFAULT_HIGHLIGHT_COLOR: tuple[int, int, int] = (255, 225, 70)
 
 stop_event = Event()
@@ -36,18 +41,16 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Render a video highlighting panes one-by-one in scan order.",
     )
-    _ = parser.add_argument("--image", type=Path, default=DEFAULT_IMAGE)
-    _ = parser.add_argument("--panes", type=Path, default=DEFAULT_PANES_JSON)
+    _ = parser.add_argument(
+        "--mask",
+        action="store_true",
+        help="Render over the fixed building mask (default: transparent background).",
+    )
+    _ = parser.add_argument("--layout", type=Path, default=DEFAULT_LAYOUT_JSON_PATH)
     _ = parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    _ = parser.add_argument("--fps", type=int, default=25)
+    _ = parser.add_argument("--fps", type=int, default=DEFAULT_FPS)
     _ = parser.add_argument("--blink-seconds", type=float, default=0.025, metavar="SECS")
     _ = parser.add_argument("--alpha", type=float, default=0.85)
-    _ = parser.add_argument("--preset", default="ultrafast", help="libx264 preset.")
-    _ = parser.add_argument(
-        "--black",
-        action="store_true",
-        help="Use a black background instead of the mask image.",
-    )
     return parser.parse_args()
 
 
@@ -56,16 +59,16 @@ def main() -> None:
     _ = signal.signal(signal.SIGINT, _handle_sigint)
     args = _parse_args()
 
-    layout = Layout.from_json(args.panes)
+    layout = Layout.from_json(args.layout)
     panes = list(layout.iter_scan_order())
-    print(f"Loaded {len(panes)} panes from {args.panes}")
+    print(f"Loaded {len(panes)} panes from {args.layout}")
 
-    if args.black:
-        # Peek at image dimensions if we're not loading it as background
-        probe = Canvas.from_image(args.image)
-        base = Canvas.black(probe.width, probe.height)
+    if args.mask:
+        base = Canvas.from_image(DEFAULT_MASK_IMAGE_PATH)
+        transparent_output = False
     else:
-        base = Canvas.from_image(args.image)
+        base = Canvas.transparent(DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
+        transparent_output = True
 
     frames_per_pane = max(1, round(args.fps * args.blink_seconds))
     total_frames = len(panes) * frames_per_pane
@@ -78,7 +81,11 @@ def main() -> None:
         width=base.width,
         height=base.height,
         fps=args.fps,
-        preset=args.preset,
+        vf_filter=None,
+        preset=None,
+        input_pix_fmt="rgba" if transparent_output else "rgb24",
+        output_codec="libvpx-vp9",
+        output_pix_fmt="yuva420p" if transparent_output else "yuv420p",
     ) as writer:
         try:
             for pane_idx, pane in enumerate(panes):

@@ -18,15 +18,14 @@ from threading import Event
 
 from video_mapping.audio import process_audio
 from video_mapping.canvas import Canvas
+from video_mapping.constants import DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_FPS, DEFAULT_MASK_IMAGE_PATH
 from video_mapping.layout import Layout, Pillar
 from video_mapping.render import VideoWriter
 
 # Visualisation defaults
-DEFAULT_FPS = 25
 DEFAULT_BAR_BOTTOM_COLOR: tuple[int, int, int] = (0, 255, 0)
 DEFAULT_BAR_TOP_COLOR: tuple[int, int, int] = (255, 0, 0)
 DEFAULT_GLOW_COLOR: tuple[int, int, int] = (255, 200, 50)  # warm yellow-orange
-DEFAULT_PANES_JSON = Path("static/panes.json")
 DEFAULT_OUTPUT = Path("output/audio_visualizer.webm")
 
 stop_event = Event()
@@ -93,16 +92,12 @@ def _parse_args() -> argparse.Namespace:
     )
     _ = parser.add_argument("--audio", type=Path, required=True, help="Input WAV file.")
     _ = parser.add_argument(
-        "--image",
-        type=Path,
-        default=None,
-        help="Background image (default: transparent canvas). Pass the color mask for debug rendering.",
+        "--mask",
+        action="store_true",
+        help="Render over the fixed building mask (default: transparent background).",
     )
-    _ = parser.add_argument("--panes", type=Path, default=DEFAULT_PANES_JSON)
     _ = parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     _ = parser.add_argument("--fps", type=int, default=DEFAULT_FPS)
-    _ = parser.add_argument("--width", type=int, default=4096)
-    _ = parser.add_argument("--height", type=int, default=606)
     _ = parser.add_argument(
         "--duration",
         type=float,
@@ -110,11 +105,6 @@ def _parse_args() -> argparse.Namespace:
         help="Optional max output duration in seconds (default: full audio length).",
     )
     _ = parser.add_argument("--hop-size", type=int, default=1024)
-    _ = parser.add_argument(
-        "--vf",
-        default="pad=width=4096:height=606:x=0:y=0",
-        help="ffmpeg -vf filter string.",
-    )
     return parser.parse_args()
 
 
@@ -123,14 +113,21 @@ def main() -> None:
     _ = signal.signal(signal.SIGINT, _handle_sigint)
     args = _parse_args()
 
-    layout = Layout.from_json(args.panes)
+    layout = Layout.default()
     num_bands = len(layout.pillars)
+
+    if args.mask:
+        base = Canvas.from_image(DEFAULT_MASK_IMAGE_PATH)
+        transparent_output = False
+    else:
+        base = Canvas.transparent(DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
+        transparent_output = True
 
     print("Processing audio...")
     sample_rate, band_heights, beats = process_audio(
         args.audio,
         num_bands=num_bands,
-        bar_height=args.height - 1,
+        bar_height=base.height - 1,
         hop_size=args.hop_size,
     )
 
@@ -139,13 +136,6 @@ def main() -> None:
     n_video_frames = int(n_fft_frames / fft_fps * args.fps)
     if args.duration is not None:
         n_video_frames = min(n_video_frames, int(args.duration * args.fps))
-
-    if args.image is not None:
-        base = Canvas.from_image(args.image)
-        transparent_output = False
-    else:
-        base = Canvas.transparent(args.width, args.height)
-        transparent_output = True
 
     print(f"Rendering {n_video_frames} frames (Ctrl+C to stop)...")
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -156,7 +146,7 @@ def main() -> None:
         height=base.height,
         fps=args.fps,
         audio_path=args.audio,
-        vf_filter=None if transparent_output else args.vf,
+        vf_filter=None,
         preset=None,
         input_pix_fmt="rgba" if transparent_output else "rgb24",
         output_codec="libvpx-vp9",

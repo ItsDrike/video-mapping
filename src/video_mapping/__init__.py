@@ -2,18 +2,19 @@
 
 Quick-start::
 
-    from pathlib import Path
+from pathlib import Path
     from video_mapping import Canvas, Layout, VideoWriter
+    from video_mapping.constants import DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH
 
-    layout = Layout.from_json(Path("static/panes.json"))
-    base = Canvas.black(4096, 606)
+    layout = Layout.default()
+    base = Canvas.transparent(DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
 
     # Draw something on a single pane
     base.color_pane(layout.top_row.blocks[2].left.pane_at(0, 1), (255, 0, 0))
 
     # Render a video
     with VideoWriter(Path("output/out.mp4"), width=base.width, height=base.height, fps=25) as writer:
-        for _ in range(90):  # 3 seconds at 30 fps
+        for _ in range(75):  # 3 seconds at 25 fps
             frame = base.copy()
             writer.write_canvas(frame)
 """
