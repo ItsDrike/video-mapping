@@ -318,7 +318,7 @@ def _detect_pillars(
     return pillars
 
 
-def _build_structure(
+def _build_structure(  # noqa: PLR0914
     panes: list[_Pane],
     color_mask_path: Path,
     canvas_width: int = DEFAULT_CANVAS_WIDTH,
@@ -410,7 +410,7 @@ def _build_structure(
     return {"rows": rows_out, "pillars": pillar_json, "walls": walls}
 
 
-def extract_layout(mask_path: Path, color_mask_path: Path, output_path: Path) -> int:
+def extract_layout(mask_path: Path, *, color_mask_path: Path, output_path: Path) -> int:
     """Extract layout from *mask_path* and write structured JSON to *output_path*."""
     panes = _extract_raw_panes(mask_path)
     data = _build_structure(panes, color_mask_path)
@@ -440,7 +440,7 @@ def main() -> None:
     """Extract building layout geometry from a facade mask image."""
     args = _parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    count = extract_layout(args.mask, args.color_mask, args.output)
+    count = extract_layout(args.mask, color_mask_path=args.color_mask, output_path=args.output)
     print(f"Extracted {count} panes → {args.output}")
 
 

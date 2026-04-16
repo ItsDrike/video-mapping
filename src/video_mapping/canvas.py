@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from PIL import Image
 
-from video_mapping.layout import Block, Half, Pane, Pillar, Rect, Row, WallStrips
-from video_mapping.types import RGBColor, U8Array
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
+    from video_mapping.layout import Block, Half, Pane, Pillar, Rect, Row, WallStrips
+    from video_mapping.types import RGBColor, U8Array
 
 
-class Canvas:
+class Canvas:  # noqa: PLR0904 - Canvas is intentionally a rich drawing facade
     """A mutable RGB/RGBA drawing surface backed by a numpy uint8 array.
 
     Coordinates follow image convention: (0, 0) is the top-left corner.
@@ -97,7 +100,7 @@ class Canvas:
     # Low-level drawing
     # ------------------------------------------------------------------
 
-    def fill_rect(self, x1: int, y1: int, x2: int, y2: int, color: RGBColor) -> None:
+    def fill_rect(self, *, x1: int, y1: int, x2: int, y2: int, color: RGBColor) -> None:
         """Solid-fill a rectangle. All coords are inclusive."""
         region = self._arr[y1 : y2 + 1, x1 : x2 + 1]
         region[..., :3] = color
@@ -106,6 +109,7 @@ class Canvas:
 
     def blend_rect(
         self,
+        *,
         x1: int,
         y1: int,
         x2: int,
@@ -139,6 +143,7 @@ class Canvas:
 
     def _draw_rect(
         self,
+        *,
         x1: int,
         y1: int,
         x2: int,
@@ -147,9 +152,9 @@ class Canvas:
         alpha: float,
     ) -> None:
         if alpha >= 1.0:
-            self.fill_rect(x1, y1, x2, y2, color)
+            self.fill_rect(x1=x1, y1=y1, x2=x2, y2=y2, color=color)
         else:
-            self.blend_rect(x1, y1, x2, y2, color, alpha)
+            self.blend_rect(x1=x1, y1=y1, x2=x2, y2=y2, color=color, alpha=alpha)
 
     # ------------------------------------------------------------------
     # Pane / window drawing
@@ -157,7 +162,7 @@ class Canvas:
 
     def color_pane(self, pane: Pane, color: RGBColor, alpha: float = 1.0) -> None:
         """Color a single window pane."""
-        self._draw_rect(pane.x1, pane.y1, pane.x2, pane.y2, color, alpha)
+        self._draw_rect(x1=pane.x1, y1=pane.y1, x2=pane.x2, y2=pane.y2, color=color, alpha=alpha)
 
     def color_panes(self, panes: Iterable[Pane], color: RGBColor, alpha: float = 1.0) -> None:
         """Color an arbitrary collection of panes with the same color."""
@@ -197,14 +202,14 @@ class Canvas:
         Useful for drawing solid regions even when individual panes don't perfectly
         cover the area (e.g. a half-block, block, or row overlay).
         """
-        self.fill_rect(bbox.x1, bbox.y1, bbox.x2, bbox.y2, color)
+        self.fill_rect(x1=bbox.x1, y1=bbox.y1, x2=bbox.x2, y2=bbox.y2, color=color)
 
     def blend_bbox(self, bbox: Rect, color: RGBColor, alpha: float) -> None:
         """Alpha-blend a color onto a bounding box.
 
         Useful for translucent overlays across structural regions.
         """
-        self.blend_rect(bbox.x1, bbox.y1, bbox.x2, bbox.y2, color, alpha)
+        self.blend_rect(x1=bbox.x1, y1=bbox.y1, x2=bbox.x2, y2=bbox.y2, color=color, alpha=alpha)
 
     # ------------------------------------------------------------------
     # Generic Rect / grid-strip / wall drawing
@@ -212,7 +217,7 @@ class Canvas:
 
     def color_region(self, region: Rect, color: RGBColor, alpha: float = 1.0) -> None:
         """Color any Rect — pane, pillar, wall section, grid strip, or bounding box."""
-        self._draw_rect(region.x1, region.y1, region.x2, region.y2, color, alpha)
+        self._draw_rect(x1=region.x1, y1=region.y1, x2=region.x2, y2=region.y2, color=color, alpha=alpha)
 
     def fill_half_grid(self, half: Half, color: RGBColor, alpha: float = 1.0) -> None:
         """Fill all inter-pane grid strips (window frame) in a half-block.
@@ -221,16 +226,16 @@ class Canvas:
         strips (between pane columns) with the same color.
         """
         for strip in half.all_grid_strips():
-            self._draw_rect(strip.x1, strip.y1, strip.x2, strip.y2, color, alpha)
+            self._draw_rect(x1=strip.x1, y1=strip.y1, x2=strip.x2, y2=strip.y2, color=color, alpha=alpha)
 
     def fill_wall(self, wall: Rect, color: RGBColor, alpha: float = 1.0) -> None:
         """Fill a single horizontal wall section (above/middle/below the window rows)."""
-        self._draw_rect(wall.x1, wall.y1, wall.x2, wall.y2, color, alpha)
+        self._draw_rect(x1=wall.x1, y1=wall.y1, x2=wall.x2, y2=wall.y2, color=color, alpha=alpha)
 
     def fill_walls(self, walls: WallStrips, color: RGBColor, alpha: float = 1.0) -> None:
         """Fill all wall sections with the same color (above, middle_top, middle_bottom, below)."""
         for w in walls.strips():
-            self._draw_rect(w.x1, w.y1, w.x2, w.y2, color, alpha)
+            self._draw_rect(x1=w.x1, y1=w.y1, x2=w.x2, y2=w.y2, color=color, alpha=alpha)
 
     # ------------------------------------------------------------------
     # Pillar drawing
@@ -238,7 +243,7 @@ class Canvas:
 
     def fill_pillar(self, pillar: Pillar, color: RGBColor) -> None:
         """Solid-fill the full pillar rect (spans y1 to y2 as stored in JSON)."""
-        self.fill_rect(pillar.x1, pillar.y1, pillar.x2, pillar.y2, color)
+        self.fill_rect(x1=pillar.x1, y1=pillar.y1, x2=pillar.x2, y2=pillar.y2, color=color)
 
     def fill_pillar_bar(
         self,
@@ -249,4 +254,4 @@ class Canvas:
     ) -> None:
         """Fill a pillar bar that rises *bar_height* pixels from the bottom of the pillar."""
         y_start = max(pillar.y1, pillar.y2 - bar_height + 1)
-        self._draw_rect(pillar.x1, y_start, pillar.x2, pillar.y2, color, alpha)
+        self._draw_rect(x1=pillar.x1, y1=y_start, x2=pillar.x2, y2=pillar.y2, color=color, alpha=alpha)

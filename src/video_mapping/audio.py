@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from scipy.io import wavfile
 
-from video_mapping.types import F32Array, U16Array
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from video_mapping.types import F32Array, U16Array
 
 
 def load_audio(path: Path) -> tuple[int, F32Array]:
@@ -22,6 +24,7 @@ def load_audio(path: Path) -> tuple[int, F32Array]:
 
 def compute_fft_frames(
     audio: F32Array,
+    *,
     frame_size: int = 2048,
     hop_size: int = 1024,
 ) -> F32Array:
@@ -31,13 +34,14 @@ def compute_fft_frames(
     strides = (audio.strides[0] * hop_size, audio.strides[0])
     frames = np.lib.stride_tricks.as_strided(audio, shape=shape, strides=strides)
     window = np.hanning(frame_size)
-    frames = frames * window
+    frames = frames * window  # noqa: PLR6104 - in-place op is unsafe on overlapping as_strided view
     fft = np.fft.rfft(frames, axis=1)
     return np.abs(fft).astype(np.float32)
 
 
 def map_to_bands_log(
     fft_frames: F32Array,
+    *,
     sample_rate: int,
     num_bands: int,
 ) -> F32Array:
@@ -115,6 +119,7 @@ def smooth_beats(beats: F32Array, decay: float = 0.96) -> F32Array:
 
 def process_audio(
     path: Path,
+    *,
     num_bands: int,
     bar_height: int,
     frame_size: int = 2048,
@@ -127,7 +132,7 @@ def process_audio(
     sample_rate, audio = load_audio(path)
 
     fft_frames = compute_fft_frames(audio, frame_size=frame_size, hop_size=hop_size)
-    bands = map_to_bands_log(fft_frames, sample_rate, num_bands)
+    bands = map_to_bands_log(fft_frames, sample_rate=sample_rate, num_bands=num_bands)
     bands = apply_weighting(bands)
     bands = enhance_transients(bands)
     bands = smooth_bands(bands)

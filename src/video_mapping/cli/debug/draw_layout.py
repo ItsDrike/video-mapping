@@ -79,12 +79,15 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from video_mapping.canvas import Canvas
 from video_mapping.constants import DEFAULT_LAYOUT_JSON_PATH, DEFAULT_MASK_IMAGE_PATH
 from video_mapping.layout import Layout
 from video_mapping.render import VideoWriter
-from video_mapping.types import RGBColor
+
+if TYPE_CHECKING:
+    from video_mapping.types import RGBColor
 
 _FPS = 25
 

@@ -15,6 +15,7 @@ import argparse
 import signal
 from pathlib import Path
 from threading import Event
+from typing import TYPE_CHECKING
 
 from video_mapping.audio import process_audio
 from video_mapping.canvas import Canvas
@@ -22,10 +23,13 @@ from video_mapping.constants import DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH,
 from video_mapping.layout import Layout, Pillar
 from video_mapping.render import VideoWriter
 
+if TYPE_CHECKING:
+    from video_mapping.types import RGBColor
+
 # Visualisation defaults
-DEFAULT_BAR_BOTTOM_COLOR: tuple[int, int, int] = (0, 255, 0)
-DEFAULT_BAR_TOP_COLOR: tuple[int, int, int] = (255, 0, 0)
-DEFAULT_GLOW_COLOR: tuple[int, int, int] = (255, 200, 50)  # warm yellow-orange
+DEFAULT_BAR_BOTTOM_COLOR: RGBColor = (0, 255, 0)
+DEFAULT_BAR_TOP_COLOR: RGBColor = (255, 0, 0)
+DEFAULT_GLOW_COLOR: RGBColor = (255, 200, 50)  # warm yellow-orange
 DEFAULT_OUTPUT = Path("output/audio_visualizer.webm")
 
 stop_event = Event()
@@ -40,7 +44,7 @@ def _apply_glow(
     canvas: Canvas,
     layout: Layout,
     strength: float,
-    color: tuple[int, int, int],
+    color: RGBColor,
 ) -> None:
     if strength < 0.05:
         return
@@ -54,10 +58,11 @@ def _lerp_channel(start: int, end: int, t: float) -> int:
 
 def _bar_gradient_color_at_y(
     y: int,
+    *,
     canvas_height: int,
-    bottom_color: tuple[int, int, int],
-    top_color: tuple[int, int, int],
-) -> tuple[int, int, int]:
+    bottom_color: RGBColor,
+    top_color: RGBColor,
+) -> RGBColor:
     # y=canvas_height-1 (bottom) -> t=0.0 (green), y=0 (top) -> t=1.0 (red)
     if canvas_height <= 1:
         return bottom_color
@@ -72,9 +77,10 @@ def _bar_gradient_color_at_y(
 def _draw_gradient_pillar_bar(
     canvas: Canvas,
     pillar: Pillar,
+    *,
     bar_height: int,
-    bottom_color: tuple[int, int, int],
-    top_color: tuple[int, int, int],
+    bottom_color: RGBColor,
+    top_color: RGBColor,
 ) -> None:
     clamped_height = max(0, min(int(bar_height), canvas.height))
     if clamped_height == 0:
@@ -82,8 +88,13 @@ def _draw_gradient_pillar_bar(
 
     y_start = canvas.height - clamped_height
     for y in range(y_start, canvas.height):
-        row_color = _bar_gradient_color_at_y(y, canvas.height, bottom_color, top_color)
-        canvas.fill_rect(pillar.x_start, y, pillar.x_end, y, row_color)
+        row_color = _bar_gradient_color_at_y(
+            y,
+            canvas_height=canvas.height,
+            bottom_color=bottom_color,
+            top_color=top_color,
+        )
+        canvas.fill_rect(x1=pillar.x_start, y1=y, x2=pillar.x_end, y2=y, color=row_color)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -163,9 +174,9 @@ def main() -> None:
                 _draw_gradient_pillar_bar(
                     canvas,
                     pillar,
-                    int(bar_height),
-                    DEFAULT_BAR_BOTTOM_COLOR,
-                    DEFAULT_BAR_TOP_COLOR,
+                    bar_height=int(bar_height),
+                    bottom_color=DEFAULT_BAR_BOTTOM_COLOR,
+                    top_color=DEFAULT_BAR_TOP_COLOR,
                 )
 
             glow_strength = float(beats[fft_idx])

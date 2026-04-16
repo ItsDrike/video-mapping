@@ -10,10 +10,9 @@ from typing import TYPE_CHECKING, Any, Self
 import imageio_ffmpeg  # pyright: ignore[reportMissingTypeStubs]
 from tqdm import tqdm
 
-from video_mapping.types import U8Array
-
 if TYPE_CHECKING:
     from video_mapping.canvas import Canvas
+    from video_mapping.types import U8Array
 
 
 class VideoWriter:
@@ -22,6 +21,7 @@ class VideoWriter:
     def __init__(
         self,
         output_path: Path,
+        *,
         width: int,
         height: int,
         fps: int,

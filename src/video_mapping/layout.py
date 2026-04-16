@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from video_mapping.constants import DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_LAYOUT_JSON_PATH
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -388,7 +390,7 @@ class Layout:
         Args:
             path: Path to the layout.json produced by the extract pipeline.
         """
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             data = json.load(f)
 
         return cls.from_data(data)

@@ -14,6 +14,7 @@ import argparse
 import signal
 from pathlib import Path
 from threading import Event
+from typing import TYPE_CHECKING
 
 from video_mapping.canvas import Canvas
 from video_mapping.constants import (
@@ -26,8 +27,11 @@ from video_mapping.constants import (
 from video_mapping.layout import Layout
 from video_mapping.render import VideoWriter
 
+if TYPE_CHECKING:
+    from video_mapping.types import RGBColor
+
 DEFAULT_OUTPUT = Path("output/pane_scan.webm")
-DEFAULT_HIGHLIGHT_COLOR: tuple[int, int, int] = (255, 225, 70)
+DEFAULT_HIGHLIGHT_COLOR: RGBColor = (255, 225, 70)
 
 stop_event = Event()
 
