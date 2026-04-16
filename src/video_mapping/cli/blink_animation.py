@@ -36,6 +36,7 @@ _NUM_BUILDING_ROWS = 2
 _NUM_PANE_ROWS = 6
 _TOTAL_PANE_ROWS = _NUM_BUILDING_ROWS * _NUM_PANE_ROWS  # 12
 _NUM_COLS = 66  # 11 blocks x 2 halves x 3 columns
+_END_SCAN_FRACTION = 2.5 / DURATION
 
 stop_event = Event()
 
@@ -77,10 +78,13 @@ def _pane(layout: Layout, building_row: int, pane_row: int, col: int) -> Pane:
 
 def _render_frame(
     canvas: Canvas,
+    base: Canvas,
     layout: Layout,
     t: float,
     rng: np.random.Generator,
     draw_pillar_bars: bool,
+    end_scan_panes: list[Pane],
+    end_scan_progress: float | None,
 ) -> None:
     # ------------------------------------------------------------------ #
     # Layer 0: 2D interference wave field
@@ -174,6 +178,24 @@ def _render_frame(
             pillar_hue = (0.07 + 0.04 * math.sin(t * 0.55 + i * 0.38)) % 1.0
             canvas.fill_pillar_bar(pillar, bar_h, _hsv_to_rgb(pillar_hue, 1.0, 1.0))
 
+    if end_scan_progress is None:
+        return
+
+    progress = max(0.0, min(1.0, end_scan_progress))
+    total = len(end_scan_panes)
+    retired = min(total, int(progress * total))
+
+    canvas_arr = canvas.to_array()
+    base_arr = base.to_array()
+
+    for pane in end_scan_panes[:retired]:
+        canvas_arr[pane.y1 : pane.y2 + 1, pane.x1 : pane.x2 + 1] = base_arr[
+            pane.y1 : pane.y2 + 1, pane.x1 : pane.x2 + 1
+        ]
+
+    if retired < total:
+        canvas.color_pane(end_scan_panes[retired], (220, 240, 255), alpha=0.98)
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -214,6 +236,10 @@ def main() -> None:
 
     print(f"Rendering {n_frames} frames ({args.duration:.0f}s @ {args.fps} fps)...")
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    end_scan_panes = list(layout.iter_scan_order())
+    end_scan_seconds = args.duration * _END_SCAN_FRACTION
+    end_scan_frames = max(1, round(end_scan_seconds * args.fps))
+    end_scan_start_frame = max(0, n_frames - end_scan_frames)
 
     with VideoWriter(
         args.output,
@@ -233,7 +259,21 @@ def main() -> None:
 
             t = frame_idx / args.fps
             canvas = base.copy()
-            _render_frame(canvas, layout, t, rng, draw_pillar_bars=not args.no_pillar_bars)
+            if frame_idx >= end_scan_start_frame and n_frames > 1:
+                end_scan_progress = (frame_idx - end_scan_start_frame) / max(1, n_frames - 1 - end_scan_start_frame)
+            else:
+                end_scan_progress = None
+
+            _render_frame(
+                canvas,
+                base,
+                layout,
+                t,
+                rng,
+                draw_pillar_bars=not args.no_pillar_bars,
+                end_scan_panes=end_scan_panes,
+                end_scan_progress=end_scan_progress,
+            )
 
             if not writer.write_canvas(canvas):
                 print("FFmpeg terminated early.")
