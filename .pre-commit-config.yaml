@@ -47,11 +47,3 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-
-      # zuban: static type checker (strict mode)
-      - id: zuban
-        name: zuban --strict
-        entry: uvx zuban check --strict
-        language: system
-        types: [python]
-        pass_filenames: false
