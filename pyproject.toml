@@ -30,6 +30,7 @@ half-block-beats = "video_mapping.cli.half_block_beats:main"
 debug-pane-scan = "video_mapping.cli.debug.pane_scan:main"
 debug-draw-halves = "video_mapping.cli.debug.draw_halves:main"
 debug-extract-layout = "video_mapping.cli.debug.extract_layout:main"
+debug-draw-layout = "video_mapping.cli.debug.draw_layout:main"
 
 [build-system]
 requires = ["hatchling"]

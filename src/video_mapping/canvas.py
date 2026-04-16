@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from video_mapping.layout import Block, Half, Pane, Pillar, Row
+from video_mapping.layout import Block, Half, Pane, Pillar, Rect, Row, WallStrips
 from video_mapping.types import RGBColor, U8Array
 
 
@@ -191,39 +191,54 @@ class Canvas:
     # Bounding box drawing (useful for overlays that cross pane boundaries)
     # ------------------------------------------------------------------
 
-    def fill_bbox(
-        self,
-        bbox: tuple[int, int, int, int],
-        color: RGBColor,
-    ) -> None:
-        """Fill a bounding box (x1, y1, x2, y2) with a solid color.
+    def fill_bbox(self, bbox: Rect, color: RGBColor) -> None:
+        """Fill a bounding box with a solid color.
 
         Useful for drawing solid regions even when individual panes don't perfectly
         cover the area (e.g. a half-block, block, or row overlay).
         """
-        x1, y1, x2, y2 = bbox
-        self.fill_rect(x1, y1, x2, y2, color)
+        self.fill_rect(bbox.x1, bbox.y1, bbox.x2, bbox.y2, color)
 
-    def blend_bbox(
-        self,
-        bbox: tuple[int, int, int, int],
-        color: RGBColor,
-        alpha: float,
-    ) -> None:
-        """Alpha-blend a color onto a bounding box (x1, y1, x2, y2).
+    def blend_bbox(self, bbox: Rect, color: RGBColor, alpha: float) -> None:
+        """Alpha-blend a color onto a bounding box.
 
         Useful for translucent overlays across structural regions.
         """
-        x1, y1, x2, y2 = bbox
-        self.blend_rect(x1, y1, x2, y2, color, alpha)
+        self.blend_rect(bbox.x1, bbox.y1, bbox.x2, bbox.y2, color, alpha)
+
+    # ------------------------------------------------------------------
+    # Generic Rect / grid-strip / wall drawing
+    # ------------------------------------------------------------------
+
+    def color_region(self, region: Rect, color: RGBColor, alpha: float = 1.0) -> None:
+        """Color any Rect — pane, pillar, wall section, grid strip, or bounding box."""
+        self._draw_rect(region.x1, region.y1, region.x2, region.y2, color, alpha)
+
+    def fill_half_grid(self, half: Half, color: RGBColor, alpha: float = 1.0) -> None:
+        """Fill all inter-pane grid strips (window frame) in a half-block.
+
+        Draws both the horizontal strips (between pane rows) and the vertical
+        strips (between pane columns) with the same color.
+        """
+        for strip in half.all_grid_strips():
+            self._draw_rect(strip.x1, strip.y1, strip.x2, strip.y2, color, alpha)
+
+    def fill_wall(self, wall: Rect, color: RGBColor, alpha: float = 1.0) -> None:
+        """Fill a single horizontal wall section (above/middle/below the window rows)."""
+        self._draw_rect(wall.x1, wall.y1, wall.x2, wall.y2, color, alpha)
+
+    def fill_walls(self, walls: WallStrips, color: RGBColor, alpha: float = 1.0) -> None:
+        """Fill all wall sections with the same color (above, middle_top, middle_bottom, below)."""
+        for w in walls.strips():
+            self._draw_rect(w.x1, w.y1, w.x2, w.y2, color, alpha)
 
     # ------------------------------------------------------------------
     # Pillar drawing
     # ------------------------------------------------------------------
 
     def fill_pillar(self, pillar: Pillar, color: RGBColor) -> None:
-        """Solid-fill a pillar from top to bottom of the canvas."""
-        self.fill_rect(pillar.x_start, 0, pillar.x_end, self.height - 1, color)
+        """Solid-fill the full pillar rect (spans y1 to y2 as stored in JSON)."""
+        self.fill_rect(pillar.x1, pillar.y1, pillar.x2, pillar.y2, color)
 
     def fill_pillar_bar(
         self,
@@ -232,6 +247,6 @@ class Canvas:
         color: RGBColor,
         alpha: float = 1.0,
     ) -> None:
-        """Fill a pillar bar that rises *bar_height* pixels from the bottom of the canvas."""
-        y_start = max(0, self.height - bar_height)
-        self._draw_rect(pillar.x_start, y_start, pillar.x_end, self.height - 1, color, alpha)
+        """Fill a pillar bar that rises *bar_height* pixels from the bottom of the pillar."""
+        y_start = max(pillar.y1, pillar.y2 - bar_height + 1)
+        self._draw_rect(pillar.x1, y_start, pillar.x2, pillar.y2, color, alpha)
