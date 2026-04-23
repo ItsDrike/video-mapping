@@ -49,6 +49,7 @@ Debug helpers:
 ```bash
 uv run debug-extract-layout --mask static/color-mask.png --color-mask static/color-mask.png --output static/layout.json
 uv run debug-draw-layout --output output/layout_debug.webm
+uv run debug-draw-half-glow --output output/half_glow_debug.webm
 ```
 
 ## Using as a library

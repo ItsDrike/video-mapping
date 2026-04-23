@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from video_mapping.layout import Block, Half, Pane, Pillar, Rect, Row, WallStrips
-    from video_mapping.types import RGBColor, U8Array
+    from video_mapping.types import F32Array, RGBColor, U8Array
 
 
 class Canvas:  # noqa: PLR0904 - Canvas is intentionally a rich drawing facade
@@ -140,6 +140,85 @@ class Canvas:  # noqa: PLR0904 - Canvas is intentionally a rich drawing facade
 
         region[..., :3] = (out_rgb * 255.0).clip(0, 255).astype(np.uint8)
         region[..., 3] = (out_alpha[..., 0] * 255.0).clip(0, 255).astype(np.uint8)
+
+    def blend_alpha_mask(
+        self,
+        *,
+        x1: int,
+        y1: int,
+        x2: int,
+        y2: int,
+        color: RGBColor,
+        alpha_mask: F32Array,
+    ) -> None:
+        """Blend a color over a region using a per-pixel alpha mask.
+
+        ``alpha_mask`` must match the target region shape ``(y2-y1+1, x2-x1+1)``
+        and contain values in the 0.0-1.0 range.
+        """
+        region = self._arr[y1 : y2 + 1, x1 : x2 + 1]
+        local_alpha = np.asarray(alpha_mask, dtype=np.float32)
+        if local_alpha.shape != region.shape[:2]:
+            msg = "alpha_mask shape must match the target region"
+            raise ValueError(msg)
+
+        color_arr = np.array(color, dtype=np.float32)
+        src_alpha = np.clip(local_alpha, 0.0, 1.0)[..., None]
+        if region.shape[2] == 3:
+            region_f = region.astype(np.float32)
+            blended = region_f * (1.0 - src_alpha) + color_arr * src_alpha
+            region[:] = blended.clip(0, 255).astype(np.uint8)
+            return
+
+        region_f = region.astype(np.float32)
+        dst_rgb = region_f[..., :3] / 255.0
+        dst_alpha = region_f[..., 3:4] / 255.0
+        src_rgb = color_arr / 255.0
+        out_alpha = src_alpha + dst_alpha * (1.0 - src_alpha)
+        numer_rgb = src_rgb * src_alpha + dst_rgb * dst_alpha * (1.0 - src_alpha)
+        out_rgb = np.zeros_like(dst_rgb)
+        _ = np.divide(numer_rgb, out_alpha, out=out_rgb, where=out_alpha > 0.0)
+        region[..., :3] = (out_rgb * 255.0).clip(0, 255).astype(np.uint8)
+        region[..., 3] = (out_alpha[..., 0] * 255.0).clip(0, 255).astype(np.uint8)
+
+    def blend_outer_glow_rect(
+        self,
+        rect: Rect,
+        color: RGBColor,
+        radius: int,
+        alpha: float,
+        *,
+        falloff_power: float = 1.8,
+    ) -> None:
+        """Blend a glow that starts at ``rect`` and falls off outside it.
+
+        The rect interior is left untouched; only the pixels outside the rect but
+        within ``radius`` receive the glow contribution.
+        """
+        if radius <= 0 or alpha <= 0.0:
+            return
+
+        x1 = max(0, rect.x1 - radius)
+        y1 = max(0, rect.y1 - radius)
+        x2 = min(self.width - 1, rect.x2 + radius)
+        y2 = min(self.height - 1, rect.y2 + radius)
+        if x2 < x1 or y2 < y1:
+            return
+
+        ys = np.arange(y1, y2 + 1, dtype=np.float32)
+        xs = np.arange(x1, x2 + 1, dtype=np.float32)
+        grid_x, grid_y = np.meshgrid(xs, ys)
+
+        dx = np.maximum(np.maximum(rect.x1 - grid_x, 0.0), grid_x - rect.x2)
+        dy = np.maximum(np.maximum(rect.y1 - grid_y, 0.0), grid_y - rect.y2)
+        dist = np.sqrt(dx * dx + dy * dy)
+        outside_mask = dist > 0.0
+        normalized = np.clip(1.0 - dist / max(1.0, float(radius)), 0.0, 1.0)
+        local_alpha = np.where(outside_mask, np.power(normalized, falloff_power) * alpha, 0.0).astype(np.float32)
+        if np.all(local_alpha <= 0.0):
+            return
+
+        self.blend_alpha_mask(x1=x1, y1=y1, x2=x2, y2=y2, color=color, alpha_mask=local_alpha)
 
     def _draw_rect(
         self,
