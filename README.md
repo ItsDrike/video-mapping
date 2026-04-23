@@ -41,6 +41,7 @@ uv run audio-visualizer --audio audio.wav --output output/audio_visualizer.webm
 uv run blink-animation --output output/blink_animation.webm
 uv run pillar-choreography --audio audio.wav --output output/pillar_choreography.webm
 uv run half-block-beats --audio audio.wav --output output/half_block_beats.webm
+uv run loading-animation --output output/loading_animation.webm
 ```
 
 Debug helpers:

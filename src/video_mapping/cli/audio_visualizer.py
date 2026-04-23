@@ -1,8 +1,8 @@
 """CLI: render an audio-reactive bar visualiser onto the building facade.
 
 Each structural pillar shows a frequency band as a rising bar whose height
-tracks the audio energy in that band. On beats, all window panes flash with
-a warm glow.
+tracks the audio energy in that band. By default, window panes also flash
+with a warm glow on beats.
 
 Example::
 
@@ -17,6 +17,8 @@ from pathlib import Path
 from threading import Event
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from video_mapping.audio import process_audio
 from video_mapping.canvas import Canvas
 from video_mapping.constants import DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_FPS, DEFAULT_MASK_IMAGE_PATH
@@ -24,6 +26,7 @@ from video_mapping.layout import Layout, Pillar
 from video_mapping.render import VideoWriter
 
 if TYPE_CHECKING:
+    from video_mapping.layout import Pane
     from video_mapping.types import RGBColor
 
 # Visualisation defaults
@@ -40,16 +43,88 @@ def _handle_sigint(_: int, __: object) -> None:
     print("\nStopping after current frame...")
 
 
+def _build_glow_pulses(beats: np.ndarray, *, fft_fps: float) -> np.ndarray:
+    """Convert a dense beat envelope into sparser accent pulses for window glow."""
+    if len(beats) == 0:
+        return beats
+
+    baseline_window = max(1, round(fft_fps * 0.45))
+    baseline_kernel = np.ones(baseline_window, dtype=np.float32) / baseline_window
+    baseline = np.convolve(beats, baseline_kernel, mode="same")
+
+    novelty = np.maximum(beats - baseline * 1.1, 0.0)
+    active_novelty = novelty[novelty > 0.0]
+    scale = float(np.quantile(active_novelty, 0.95)) if active_novelty.size else 1.0
+    novelty = np.clip(novelty / (scale + 1e-6), 0.0, 1.0)
+
+    threshold = max(0.12, float(np.quantile(novelty, 0.8)) * 0.8)
+    min_gap = max(1, round(fft_fps * 0.14))
+    triggers = np.zeros_like(novelty)
+    last_trigger_idx = -min_gap
+
+    for idx in range(1, len(novelty) - 1):
+        strength = float(novelty[idx])
+        if strength < threshold:
+            continue
+        if strength < novelty[idx - 1] or strength < novelty[idx + 1]:
+            continue
+
+        if idx - last_trigger_idx < min_gap:
+            if strength <= triggers[last_trigger_idx]:
+                continue
+            triggers[last_trigger_idx] = 0.0
+
+        triggers[idx] = strength
+        last_trigger_idx = idx
+
+    decay = 0.82
+    pulses = np.zeros_like(triggers)
+    pulses[0] = triggers[0]
+    for idx in range(1, len(pulses)):
+        pulses[idx] = max(triggers[idx], pulses[idx - 1] * decay)
+
+    return pulses
+
+
+def _build_glow_bed(beats: np.ndarray) -> np.ndarray:
+    """Normalize the dense beat envelope into a gentler continuous glow bed."""
+    if len(beats) == 0:
+        return beats
+
+    floor = float(np.quantile(beats, 0.2))
+    ceiling = float(np.quantile(beats, 0.9))
+    normalized = np.clip((beats - floor) / max(ceiling - floor, 1e-6), 0.0, 1.0)
+    return np.power(normalized, 1.6).astype(np.float32)
+
+
+def _select_glow_panes(panes: list[Pane], *, coverage: float, frame_idx: int) -> list[Pane]:
+    """Pick an evenly distributed moving subset of panes for partial-facade glow."""
+    if coverage >= 0.999:
+        return panes
+
+    pane_count = len(panes)
+    target_count = max(1, min(pane_count, round(pane_count * coverage)))
+    start = (frame_idx * 7) % pane_count
+    offsets = ((np.arange(target_count, dtype=np.int32) * pane_count) // target_count + start) % pane_count
+    return [panes[int(idx)] for idx in offsets]
+
+
 def _apply_glow(
     canvas: Canvas,
-    layout: Layout,
-    strength: float,
+    panes: list[Pane],
+    *,
+    bed_strength: float,
+    pulse_strength: float,
+    frame_idx: int,
     color: RGBColor,
 ) -> None:
-    if strength < 0.05:
+    combined_strength = max(bed_strength * 0.55, pulse_strength)
+    if combined_strength < 0.04:
         return
-    alpha = min(0.9, strength * 1.5)
-    canvas.color_panes(layout.all_panes(), color, alpha=alpha)
+
+    alpha = min(0.9, 0.08 + bed_strength * 0.20 + pulse_strength * 0.65)
+    coverage = min(1.0, 0.12 + bed_strength * 0.30 + pulse_strength * 0.68)
+    canvas.color_panes(_select_glow_panes(panes, coverage=coverage, frame_idx=frame_idx), color, alpha=alpha)
 
 
 def _lerp_channel(start: int, end: int, t: float) -> int:
@@ -116,6 +191,11 @@ def _parse_args() -> argparse.Namespace:
         help="Optional max output duration in seconds (default: full audio length).",
     )
     _ = parser.add_argument("--hop-size", type=int, default=1024)
+    _ = parser.add_argument(
+        "--pillars-only",
+        action="store_true",
+        help="Disable window glow effects and render only pillar bars.",
+    )
     return parser.parse_args()
 
 
@@ -126,6 +206,7 @@ def main() -> None:
 
     layout = Layout.default()
     num_bands = len(layout.pillars)
+    panes = layout.all_panes_flat()
 
     if args.mask:
         base = Canvas.from_image(DEFAULT_MASK_IMAGE_PATH)
@@ -143,6 +224,8 @@ def main() -> None:
     )
 
     fft_fps = sample_rate / args.hop_size
+    glow_bed = _build_glow_bed(beats)
+    glow_pulses = _build_glow_pulses(beats, fft_fps=fft_fps)
     n_fft_frames = len(band_heights)
     n_video_frames = int(n_fft_frames / fft_fps * args.fps)
     if args.duration is not None:
@@ -179,8 +262,15 @@ def main() -> None:
                     top_color=DEFAULT_BAR_TOP_COLOR,
                 )
 
-            glow_strength = float(beats[fft_idx])
-            _apply_glow(canvas, layout, glow_strength, DEFAULT_GLOW_COLOR)
+            if not args.pillars_only:
+                _apply_glow(
+                    canvas,
+                    panes,
+                    bed_strength=float(glow_bed[fft_idx]),
+                    pulse_strength=float(glow_pulses[fft_idx]),
+                    frame_idx=frame_idx,
+                    color=DEFAULT_GLOW_COLOR,
+                )
 
             if not writer.write_canvas(canvas):
                 writer.log("FFmpeg finished (audio ended).")

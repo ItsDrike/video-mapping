@@ -8,8 +8,8 @@ Sequence
 Phase 1 - Pane scan (2.5 s)
     Panes are highlighted progressively in visual scan order (pane-row 0 -> pane-row 5
     sweeping left-to-right across all blocks for the top building row, then the bottom
-    row).  Each pane turns white once visited and stays lit for the rest of this phase.
-    Highlight color: white (255, 255, 255), alpha 0.70.
+    row).  Each pane lights up once visited and stays lit for the rest of this phase.
+    Highlight color: sky-blue (0, 200, 255), alpha 0.70.
 
 Phase 2 - Half-block pane colours (1.5 s)
     All 18 panes in every half-block are filled with the same colour.  Six colours
@@ -18,27 +18,30 @@ Phase 2 - Half-block pane colours (1.5 s)
       red (220, 60, 60)  /  green (50, 190, 80)  /  blue (60, 120, 240)
       yellow (230, 200, 0)  /  cyan (0, 200, 220)  /  purple (200, 60, 220)
 
-Phase 3 - Inter-pane grid strips (1 s)
-    Only the horizontal h_strips (between pane rows) and vertical v_strips (between
-    pane columns) are drawn.  Panes are left clear so the mask shows through.
-    Color: white (255, 255, 255), alpha 0.85.
+Phase 3 - Inter-pane grid strips and outer vertical strips (1 s)
+    The inner horizontal h_strips (between pane rows) and vertical v_strips (between
+    pane columns) are drawn, plus the outer vertical gap strips on either side of each
+    block's pane area (the thin black columns between the pillar and the first/last pane
+    column).  Panes are left clear so the mask shows through.
+    Color: yellow (230, 200, 0), alpha 0.85.
 
 Phase 4 - Panes / grid strips / block walls together (1.5 s)
-    All three element classes shown simultaneously with distinct colours:
-    - Panes:        cyan (0, 200, 220), alpha 0.45
-    - Grid strips:  yellow (240, 210, 0), alpha 0.80
-    - Block walls:  orange (255, 130, 0), alpha 0.80
+    All three element classes shown simultaneously with distinct colours.  The grid
+    strip category includes both inner h/v_strips and the outer vertical gap strips.
+    - Panes:               cyan (0, 200, 220), alpha 0.45
+    - Grid strips + outer: yellow (240, 210, 0), alpha 0.80
+    - Block walls:         orange (255, 130, 0), alpha 0.80
 
-Phase 5 - Gray vs red block walls (1 s)
+Phase 5 - Gray vs non-gray block walls (1 s)
     Per-block wall regions split by semantic role:
     - top_gray walls:              gray (140, 140, 155), alpha 0.75
-    - vertical_red + bottom_red:   red (220, 40, 40), alpha 0.75
+    - vertical_red + bottom_red:   violet (200, 60, 255), alpha 0.75
 
 Phase 6 - Three distinct per-block wall colours (1.5 s)
     Each of the three per-block wall sections shown in its own colour:
     - top_gray:     gray (140, 140, 155), alpha 0.80
-    - vertical_red: red (210, 40, 40), alpha 0.80
-    - bottom_red:   magenta (220, 60, 200), alpha 0.80
+    - vertical_red: blue (80, 160, 255), alpha 0.80
+    - bottom_red:   orange (255, 130, 0), alpha 0.80
 
 Phase 7 - Pane-row sweep, 6 passes x 0.5 s (3 s total)
     For pane-row index 0 through 5, the current row is highlighted brightly in both
@@ -49,19 +52,21 @@ Phase 7 - Pane-row sweep, 6 passes x 0.5 s (3 s total)
 
 Phase 8 - Half-block bounding boxes (1 s)
     The bounding box of every half-block is filled.  A 4-colour palette cycles so
-    adjacent halves contrast visually (alpha 0.55):
+    adjacent halves contrast visually (alpha 0.75):
       orange (220, 100, 60)  /  steel-blue (60, 180, 220)
       lime (180, 220, 60)  /  hot-pink (220, 60, 180)
 
-Phase 9 - Block bounding boxes (1 s)
-    The bounding box of every block is filled with a single colour.
-    Color: violet (180, 60, 255), alpha 0.55.
+Phase 9 - Full block bounding boxes (1 s)
+    The full bounding box of every block (panes + top_gray and bottom_red walls)
+    is filled with cycling colours from a 4-colour palette (alpha 0.75):
+      burnt-orange (220, 100, 60)  /  steel-blue (60, 180, 220)
+      lime (180, 220, 60)  /  hot-pink (220, 60, 180)
 
 Phase 10 - Global wall sections, revealed one at a time (4 s -- 4 x 1 s)
     Global wall strips are added in top-to-bottom order; each previous wall stays
     visible when the next is revealed:
     a) above:         blue (30, 120, 255), alpha 0.65
-    b) middle_top:    red (220, 40, 40), alpha 0.65
+    b) middle_top:    orange (255, 130, 0), alpha 0.65
     c) middle_bottom: gray (140, 140, 155), alpha 0.65
     d) below:         green (0, 200, 80), alpha 0.65
 
@@ -135,7 +140,7 @@ def _phase_1_scan(mask_path: Path, layout: Layout, writer: VideoWriter) -> None:
     for i in range(total):
         end = round((i + 1) * n / total)
         for pane in panes[prev:end]:
-            canvas.color_pane(pane, (255, 255, 255), 0.70)
+            canvas.color_pane(pane, (0, 200, 255), 0.70)
         prev = end
         _ = writer.write_canvas(canvas)
 
@@ -151,24 +156,28 @@ def _phase_2_half_colours(mask_path: Path, layout: Layout, writer: VideoWriter) 
 
 
 def _phase_3_grid_strips(mask_path: Path, layout: Layout, writer: VideoWriter) -> None:
-    """Phase 3: inter-pane grid strips only (panes left clear)."""
+    """Phase 3: inner grid strips + outer vertical gap strips (panes left clear)."""
     canvas = _base(mask_path)
     for row in layout.rows:
         for block in row.blocks:
             for half in block.halves:
-                canvas.fill_half_grid(half, (255, 255, 255), 0.85)
+                canvas.fill_half_grid(half, (230, 200, 0), 0.85)
+            for strip in block.outer_v_strips():
+                canvas.color_region(strip, (230, 200, 0), 0.85)
     for _ in range(_frames(1.0)):
         _ = writer.write_canvas(canvas)
 
 
 def _phase_4_three_layers(mask_path: Path, layout: Layout, writer: VideoWriter) -> None:
-    """Phase 4: panes / grid strips / block walls in three distinct colours."""
+    """Phase 4: panes / grid strips (inner + outer) / block walls in three distinct colours."""
     canvas = _base(mask_path)
     for row in layout.rows:
         for block in row.blocks:
             for half in block.halves:
                 canvas.color_half(half, (0, 200, 220), 0.45)
                 canvas.fill_half_grid(half, (240, 210, 0), 0.80)
+            for strip in block.outer_v_strips():
+                canvas.color_region(strip, (240, 210, 0), 0.80)
     for wall in layout.all_walls():
         canvas.color_region(wall, (255, 130, 0), 0.80)
     for _ in range(_frames(1.5)):
@@ -181,7 +190,7 @@ def _phase_5_gray_vs_red(mask_path: Path, layout: Layout, writer: VideoWriter) -
     for wall in layout.gray_walls():
         canvas.color_region(wall, (140, 140, 155), 0.75)
     for wall in layout.red_walls():
-        canvas.color_region(wall, (220, 40, 40), 0.75)
+        canvas.color_region(wall, (200, 60, 255), 0.75)
     for _ in range(_frames(1.0)):
         _ = writer.write_canvas(canvas)
 
@@ -194,8 +203,8 @@ def _phase_6_three_wall_colours(mask_path: Path, layout: Layout, writer: VideoWr
             if block.walls is None:
                 continue
             canvas.color_region(block.walls.top_gray, (140, 140, 155), 0.80)
-            canvas.color_region(block.walls.vertical_red, (210, 40, 40), 0.80)
-            canvas.color_region(block.walls.bottom_red, (220, 60, 200), 0.80)
+            canvas.color_region(block.walls.vertical_red, (80, 160, 255), 0.80)
+            canvas.color_region(block.walls.bottom_red, (255, 130, 0), 0.80)
     for _ in range(_frames(1.5)):
         _ = writer.write_canvas(canvas)
 
@@ -226,17 +235,19 @@ def _phase_8_half_bboxes(mask_path: Path, layout: Layout, writer: VideoWriter) -
     canvas = _base(mask_path)
     halves = [half for row in layout.rows for block in row.blocks for half in block.halves]
     for idx, half in enumerate(halves):
-        canvas.blend_bbox(half.bbox(), _BBOX_PALETTE[idx % len(_BBOX_PALETTE)], 0.55)
+        canvas.blend_bbox(half.bbox(), _BBOX_PALETTE[idx % len(_BBOX_PALETTE)], 0.75)
     for _ in range(_frames(1.0)):
         _ = writer.write_canvas(canvas)
 
 
 def _phase_9_block_bboxes(mask_path: Path, layout: Layout, writer: VideoWriter) -> None:
-    """Phase 9: block bounding boxes, single colour."""
+    """Phase 9: full block bounding boxes (panes + top/bottom walls), cycling colours."""
     canvas = _base(mask_path)
+    block_idx = 0
     for row in layout.rows:
         for block in row.blocks:
-            canvas.blend_bbox(block.bbox(), (180, 60, 255), 0.55)
+            canvas.blend_bbox(block.full_bbox(), _BBOX_PALETTE[block_idx % len(_BBOX_PALETTE)], 0.75)
+            block_idx += 1
     for _ in range(_frames(1.0)):
         _ = writer.write_canvas(canvas)
 
@@ -246,7 +257,7 @@ def _phase_10_wall_sections(mask_path: Path, layout: Layout, writer: VideoWriter
     canvas = _base(mask_path)
     wall_steps = [
         (layout.walls.above, (30, 120, 255)),
-        (layout.walls.middle_top, (220, 40, 40)),
+        (layout.walls.middle_top, (255, 130, 0)),
         (layout.walls.middle_bottom, (140, 140, 155)),
         (layout.walls.below, (0, 200, 80)),
     ]

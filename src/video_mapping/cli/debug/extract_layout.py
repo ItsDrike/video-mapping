@@ -382,10 +382,27 @@ def _build_structure(  # noqa: PLR0914
                 }
                 bottom_red = {"x1": block_x1, "y1": walls["below"]["y1"], "x2": block_x2, "y2": walls["below"]["y2"]}
 
-            block_walls = {
+            # Outer vertical gap strips between adjacent pillars and this block's pane area
+            outer_left_v: dict[str, int] | None = None
+            left_cands = [p[1] for p in pillar_data if p[1] < left_x1]
+            if left_cands:
+                lx2 = max(left_cands)
+                if lx2 + 1 <= left_x1 - 1:
+                    outer_left_v = {"x1": lx2 + 1, "y1": row_y1, "x2": left_x1 - 1, "y2": row_y2}
+
+            outer_right_v: dict[str, int] | None = None
+            right_cands = [p[0] for p in pillar_data if p[0] > right_x2]
+            if right_cands:
+                rx1 = min(right_cands)
+                if right_x2 + 1 <= rx1 - 1:
+                    outer_right_v = {"x1": right_x2 + 1, "y1": row_y1, "x2": rx1 - 1, "y2": row_y2}
+
+            block_walls: dict[str, dict[str, int] | None] = {
                 "top_gray": top_gray,
                 "between_halves_red": {"x1": between_x1, "y1": row_y1, "x2": between_x2, "y2": row_y2},
                 "bottom_red": bottom_red,
+                "outer_left_v": outer_left_v,
+                "outer_right_v": outer_right_v,
             }
 
             blocks_out.append(

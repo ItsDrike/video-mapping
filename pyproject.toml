@@ -27,8 +27,10 @@ audio-visualizer = "video_mapping.cli.audio_visualizer:main"
 blink-animation = "video_mapping.cli.blink_animation:main"
 pillar-choreography = "video_mapping.cli.pillar_choreography:main"
 half-block-beats = "video_mapping.cli.half_block_beats:main"
+loading-animation = "video_mapping.cli.loading_animation:main"
 debug-extract-layout = "video_mapping.cli.debug.extract_layout:main"
 debug-draw-layout = "video_mapping.cli.debug.draw_layout:main"
+border-run = "video_mapping.cli.border_run:main"
 
 [build-system]
 requires = ["hatchling"]

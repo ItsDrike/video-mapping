@@ -72,13 +72,20 @@ class BlockWalls:
 
     For each block in each row:
     - ``top_gray``: horizontal gray wall above this block's windows
-    - ``between_halves_red``: vertical red wall between left/right halves
+    - ``vertical_red``: vertical red wall between left/right halves
     - ``bottom_red``: horizontal red wall below this block's windows
+    - ``outer_left_v``: thin vertical gap strip between the left pillar and the left half
+    - ``outer_right_v``: thin vertical gap strip between the right half and the right pillar
+
+    The outer strips span only the pane y-range of the block (not the full canvas height).
+    They are ``None`` when no adjacent pillar is found (should not happen in a valid layout).
     """
 
     top_gray: Rect
     vertical_red: Rect
     bottom_red: Rect
+    outer_left_v: Rect | None = None
+    outer_right_v: Rect | None = None
 
     @property
     def middle_wall(self) -> Rect:
@@ -86,8 +93,17 @@ class BlockWalls:
         return self.vertical_red
 
     def rects(self) -> tuple[Rect, Rect, Rect]:
-        """Return all wall regions for this block."""
+        """Return the three primary wall regions for this block (top_gray, vertical_red, bottom_red)."""
         return (self.top_gray, self.vertical_red, self.bottom_red)
+
+    def outer_v_strips(self) -> tuple[Rect, ...]:
+        """Return the outer vertical gap strips on either side of this block's pane area."""
+        result: list[Rect] = []
+        if self.outer_left_v is not None:
+            result.append(self.outer_left_v)
+        if self.outer_right_v is not None:
+            result.append(self.outer_right_v)
+        return tuple(result)
 
     def red(self) -> tuple[Rect, Rect]:
         """Return red wall regions for this block (vertical + bottom horizontal)."""
@@ -240,6 +256,12 @@ class Block:
         """Return gray wall regions for this block."""
         return self._walls_or_raise().gray()
 
+    def outer_v_strips(self) -> tuple[Rect, ...]:
+        """Return outer vertical gap strips between pillars and this block's pane area."""
+        if self.walls is None:
+            return ()
+        return self.walls.outer_v_strips()
+
     def bbox(self) -> Rect:
         """Return the bounding box spanning all panes in this block."""
         all_panes_list = list(self.all_panes())
@@ -251,6 +273,16 @@ class Block:
             max(p.x2 for p in all_panes_list),
             max(p.y2 for p in all_panes_list),
         )
+
+    def full_bbox(self) -> Rect:
+        """Return the bounding box spanning the entire block including its top and bottom walls.
+
+        Unlike bbox() which covers only the pane area, full_bbox() extends from the
+        top of the top_gray wall to the bottom of the bottom_red wall, giving the full
+        height of the block as a structural unit of the building facade.
+        """
+        walls = self._walls_or_raise()
+        return Rect(walls.top_gray.x1, walls.top_gray.y1, walls.bottom_red.x2, walls.bottom_red.y2)
 
 
 @dataclass(frozen=True)
@@ -429,7 +461,7 @@ class Layout:
             rows.append(Row(blocks=tuple(blocks)))
 
         walls = _extract_walls(typed_data, rows)
-        rows_with_walls = _attach_computed_block_walls(rows, walls)
+        rows_with_walls = _attach_computed_block_walls(rows, walls, pillar_objects)
         return cls(rows=(rows_with_walls[0], rows_with_walls[1]), pillars=pillar_objects, walls=walls)
 
     @classmethod
@@ -534,24 +566,50 @@ def _extract_block_walls(block_data: dict[str, Any]) -> BlockWalls | None:
     if not isinstance(walls_raw, dict):
         return None
 
+    outer_left_raw = walls_raw.get("outer_left_v")
+    outer_right_raw = walls_raw.get("outer_right_v")
     return BlockWalls(
         top_gray=Rect(**walls_raw["top_gray"]),
         vertical_red=Rect(**walls_raw["between_halves_red"]),
         bottom_red=Rect(**walls_raw["bottom_red"]),
+        outer_left_v=Rect(**outer_left_raw) if outer_left_raw else None,
+        outer_right_v=Rect(**outer_right_raw) if outer_right_raw else None,
     )
 
 
-def _attach_computed_block_walls(rows: list[Row], walls: WallStrips) -> list[Row]:
-    """Fill missing per-block wall metadata from pane geometry + global wall strips."""
+def _attach_computed_block_walls(
+    rows: list[Row],
+    walls: WallStrips,
+    pillars: tuple[Pillar, ...],
+) -> list[Row]:
+    """Fill missing per-block wall metadata from pane geometry, global wall strips, and pillars."""
     rows_out: list[Row] = []
     for row_idx, row in enumerate(rows):
         blocks_out: list[Block] = []
         for block in row.blocks:
-            if block.walls is not None:
+            existing = block.walls
+
+            # Skip blocks that already have all data including outer strips
+            if existing is not None and existing.outer_left_v is not None:
                 blocks_out.append(block)
                 continue
 
-            blocks_out.append(Block(halves=block.halves, walls=_compute_block_walls(row_idx, block, walls)))
+            if existing is None:
+                existing = _compute_block_walls(row_idx, block, walls)
+
+            outer_left, outer_right = _compute_outer_v_strips(block, pillars)
+            blocks_out.append(
+                Block(
+                    halves=block.halves,
+                    walls=BlockWalls(
+                        top_gray=existing.top_gray,
+                        vertical_red=existing.vertical_red,
+                        bottom_red=existing.bottom_red,
+                        outer_left_v=outer_left,
+                        outer_right_v=outer_right,
+                    ),
+                )
+            )
 
         rows_out.append(Row(blocks=tuple(blocks_out)))
 
@@ -559,7 +617,7 @@ def _attach_computed_block_walls(rows: list[Row], walls: WallStrips) -> list[Row
 
 
 def _compute_block_walls(row_idx: int, block: Block, walls: WallStrips) -> BlockWalls:
-    """Compute per-block wall regions for top/bottom rows."""
+    """Compute per-block wall regions for top/bottom rows (without outer strips)."""
     left_bbox = block.left.bbox()
     right_bbox = block.right.bbox()
     block_bbox = block.bbox()
@@ -584,6 +642,38 @@ def _compute_block_walls(row_idx: int, block: Block, walls: WallStrips) -> Block
         vertical_red=between_halves_red,
         bottom_red=bottom_red,
     )
+
+
+def _compute_outer_v_strips(block: Block, pillars: tuple[Pillar, ...]) -> tuple[Rect | None, Rect | None]:
+    """Compute outer vertical gap strips between adjacent pillars and a block's pane area.
+
+    Returns ``(outer_left, outer_right)``.  Either may be ``None`` if no adjacent
+    pillar is found (e.g. when calling on synthetic/test data with no pillars).
+    """
+    left_bbox = block.left.bbox()
+    right_bbox = block.right.bbox()
+    pane_y1 = min(left_bbox.y1, right_bbox.y1)
+    pane_y2 = max(left_bbox.y2, right_bbox.y2)
+
+    # Left outer strip: rightmost pillar whose x2 < left half's x1
+    left_candidates = [p.x2 for p in pillars if p.x2 < left_bbox.x1]
+    outer_left: Rect | None = None
+    if left_candidates:
+        lx2 = max(left_candidates)
+        x1, x2 = lx2 + 1, left_bbox.x1 - 1
+        if x1 <= x2:
+            outer_left = Rect(x1, pane_y1, x2, pane_y2)
+
+    # Right outer strip: leftmost pillar whose x1 > right half's x2
+    right_candidates = [p.x1 for p in pillars if p.x1 > right_bbox.x2]
+    outer_right: Rect | None = None
+    if right_candidates:
+        rx1 = min(right_candidates)
+        x1, x2 = right_bbox.x2 + 1, rx1 - 1
+        if x1 <= x2:
+            outer_right = Rect(x1, pane_y1, x2, pane_y2)
+
+    return outer_left, outer_right
 
 
 def _compute_half_strips(

@@ -21,6 +21,7 @@ from pathlib import Path
 
 from video_mapping.canvas import Canvas
 from video_mapping.layout import Block, BlockWalls, Half, Layout, Pane, Pillar, Rect, Row, WallStrips
+from video_mapping.perimeter import Perimeter
 from video_mapping.render import VideoWriter
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "Half",
     "Layout",
     "Pane",
+    "Perimeter",
     "Pillar",
     "Rect",
     "Row",
